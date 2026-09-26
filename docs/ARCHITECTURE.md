@@ -12,9 +12,21 @@
 
 ## First milestones
 
-1. Units/constants and numeric contract.
-2. Vector mechanics plus validated integrators.
-3. Conservation-law test corpus.
-4. Rigid-body and constraint foundations.
-5. CPU/CUDA reproducibility and tolerance harness.
-6. Additional scientific domains driven by verified reference cases.
+1. Units/constants and numeric contract — DONE (foundation
+   2026-09-26: dimensions, units, quantities, pinned constants;
+   numeric contract consumed from Numerics, not re-owned).
+2. Vector mechanics plus validated integrators — HALF DONE
+   (checked scalar/vector mechanics + constant-force slice verified;
+   no general integrator suite; rigid bodies not started).
+3. Conservation-law test corpus — STARTED (bitwise free-motion
+   conservation, work-energy agreement; no universal framework).
+4. Rigid-body and constraint foundations — DEFERRED (no workload).
+5. CPU/CUDA reproducibility and tolerance harness — DEFERRED
+   (single-backend slice; no cross-backend claims).
+6. Additional scientific domains driven by verified reference
+   cases — INTENTIONALLY OUT (thermo/EM/optics/orbital stay in
+   specialized repositories; Physics keeps unit/dimension names
+   for fixtures only).
+
+See `docs/PHYSICS_MODEL.md` for the ownership boundary and
+`docs/VERIFICATION.md` for what the foundation proves.

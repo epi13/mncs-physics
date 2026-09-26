@@ -1,0 +1,193 @@
+mncs 0.18;
+
+// Native contracts for the constant-force 1D slice: body validation,
+// free-motion bitwise conservation, the canonical 1 kg drop,
+// work-energy agreement, two-step composition, structural failures,
+// and second-consumer fixtures (pressure/stiffness/eV dimensions for
+// Fluid/FEM/Atomic without any domain coupling).
+
+module mncs.physics.test.model1d.v1;
+
+use mncs.test.assertions;
+use mncs.test.suite;
+use mncs.physics.dim;
+use mncs.physics.unit;
+use mncs.physics.quantity;
+use mncs.physics.constant;
+use mncs.physics.model1d;
+use mncs.numerics.scalar_float;
+
+fn mass1() -> (result: Quantity) {
+    return quantity_si(1.0, dim_mass());
+}
+
+fn resting_drop_step(w: Quantity, tol: f64) -> (result: bool) {
+    return match body(mass1(), quantity_si(0.0, dim_length()), quantity_si(0.0, dim_velocity())) {
+        BodyOut.Value { b } => drop_checks(b, w, tol),
+        BodyOut.BadDim => false,
+    };
+}
+
+fn drop_checks(b: Body1, w: Quantity, tol: f64) -> (result: bool) {
+    return match step_const_force(b, w, quantity_si(1.0, dim_time())) {
+        StepOut.Value { x1, v1, work, ke0, ke1 } => approx(v1.value, 0.0 - 9.80665, tol, tol) && approx(x1.value, 0.0 - 4.903325, tol, tol) && ke0.value == 0.0 && approx(ke1.value, work.value, tol, tol),
+        StepOut.BadDim => false,
+        StepOut.DivByZero => false,
+    };
+}
+
+test body_construction_checks_dimensions() -> (result: TestResult) {
+    let good: bool = match body(mass1(), quantity_si(0.0, dim_length()), quantity_si(0.0, dim_velocity())) {
+        BodyOut.Value { b } => body_vel(b) == 0.0,
+        BodyOut.BadDim => false,
+    };
+    let badm: bool = match body(quantity_si(1.0, dim_length()), quantity_si(0.0, dim_length()), quantity_si(0.0, dim_velocity())) {
+        BodyOut.Value { b } => false,
+        BodyOut.BadDim => true,
+    };
+    let badx: bool = match body(mass1(), quantity_si(0.0, dim_time()), quantity_si(0.0, dim_velocity())) {
+        BodyOut.Value { b } => false,
+        BodyOut.BadDim => true,
+    };
+    let badv: bool = match body(mass1(), quantity_si(0.0, dim_length()), quantity_si(0.0, dim_force())) {
+        BodyOut.Value { b } => false,
+        BodyOut.BadDim => true,
+    };
+    return from_assertion(equals_bool(true, good && badm && badx && badv, 7701));
+}
+
+test free_motion_conserves_bitwise() -> (result: TestResult) {
+    // F = 0: v untouched, so p and K are identical values.
+    let m: Quantity = quantity_si(2.0, dim_mass());
+    let p0: Quantity = quantity_si(6.0, dim_momentum());
+    let k0: Quantity = quantity_si(9.0, dim_energy());
+    let good: bool = match body(m, quantity_si(1.0, dim_length()), quantity_si(3.0, dim_velocity())) {
+        BodyOut.Value { b } => free_checks(b, p0, k0),
+        BodyOut.BadDim => false,
+    };
+    return from_assertion(equals_bool(true, good, 7702));
+}
+
+fn free_checks(b: Body1, p0: Quantity, k0: Quantity) -> (result: bool) {
+    return match step_const_force(b, zero_force(), quantity_si(0.5, dim_time())) {
+        StepOut.Value { x1, v1, work, ke0, ke1 } => v1.value == 3.0 && x1.value == 2.5 && work.value == 0.0 && ke0.value == k0.value && ke1.value == k0.value && body_momentum(b).value == p0.value,
+        StepOut.BadDim => false,
+        StepOut.DivByZero => false,
+    };
+}
+
+test canonical_drop_under_weight() -> (result: TestResult) {
+    // 1 kg from rest, F = -g0 N, dt = 1 s: v = -g0, x = -g0/2.
+    let tol: f64 = 0.000000000001;
+    let w: Quantity = quantity_si(0.0 - 9.80665, dim_force());
+    return from_assertion(equals_bool(true, resting_drop_step(w, tol), 7703));
+}
+
+test work_energy_theorem_holds() -> (result: TestResult) {
+    // Driven step: residual (K1 - K0) - W bounds to zero.
+    let tol: f64 = 0.000000000001;
+    let good: bool = match body(quantity_si(2.0, dim_mass()), quantity_si(1.0, dim_length()), quantity_si(3.0, dim_velocity())) {
+        BodyOut.Value { b } => driven_residual(b, tol),
+        BodyOut.BadDim => false,
+    };
+    return from_assertion(equals_bool(true, good, 7704));
+}
+
+fn driven_residual(b: Body1, tol: f64) -> (result: bool) {
+    return match step_const_force(b, quantity_si(4.0, dim_force()), quantity_si(0.25, dim_time())) {
+        StepOut.Value { x1, v1, work, ke0, ke1 } => approx(work_energy_residual(ke0, ke1, work).value, 0.0, tol, tol),
+        StepOut.BadDim => false,
+        StepOut.DivByZero => false,
+    };
+}
+
+test two_half_steps_match_one_full_step() -> (result: TestResult) {
+    let tol: f64 = 0.000000000001;
+    let good: bool = match body(mass1(), quantity_si(0.0, dim_length()), quantity_si(0.0, dim_velocity())) {
+        BodyOut.Value { b } => halves_match(b, tol),
+        BodyOut.BadDim => false,
+    };
+    return from_assertion(equals_bool(true, good, 7705));
+}
+
+record Step1Vals { x: f64, v: f64 }
+
+fn halves_match(b: Body1, tol: f64) -> (result: bool) {
+    return match step_const_force(b, quantity_si(0.0 - 9.80665, dim_force()), quantity_si(1.0, dim_time())) {
+        StepOut.Value { x1, v1, work, ke0, ke1 } => second_half(b, Step1Vals { x: x1.value, v: v1.value }, tol),
+        StepOut.BadDim => false,
+        StepOut.DivByZero => false,
+    };
+}
+
+fn second_half(b: Body1, full: Step1Vals, tol: f64) -> (result: bool) {
+    return match advance(b, quantity_si(0.0 - 9.80665, dim_force()), quantity_si(0.5, dim_time())) {
+        AdvanceOut.Value { b: h } => second_checks(h, full, tol),
+        AdvanceOut.BadDim => false,
+        AdvanceOut.DivByZero => false,
+    };
+}
+
+fn second_checks(h: Body1, full: Step1Vals, tol: f64) -> (result: bool) {
+    return match advance(h, quantity_si(0.0 - 9.80665, dim_force()), quantity_si(0.5, dim_time())) {
+        AdvanceOut.Value { b: b2 } => approx(body_vel(b2), full.v, tol, tol) && approx(b2.x.value, full.x, tol, tol),
+        AdvanceOut.BadDim => false,
+        AdvanceOut.DivByZero => false,
+    };
+}
+
+test stepper_rejects_bad_inputs() -> (result: TestResult) {
+    let good: bool = match body(mass1(), quantity_si(0.0, dim_length()), quantity_si(0.0, dim_velocity())) {
+        BodyOut.Value { b } => stepper_bad(b),
+        BodyOut.BadDim => false,
+    };
+    return from_assertion(equals_bool(true, good, 7706));
+}
+
+fn stepper_bad(b: Body1) -> (result: bool) {
+    // Force typed as energy, duration typed as length: both BadDim.
+    let badf: bool = match step_const_force(b, quantity_si(1.0, dim_energy()), quantity_si(1.0, dim_time())) {
+        StepOut.Value { x1, v1, work, ke0, ke1 } => false,
+        StepOut.BadDim => true,
+        StepOut.DivByZero => false,
+    };
+    let badt: bool = match step_const_force(b, zero_force(), quantity_si(1.0, dim_length())) {
+        StepOut.Value { x1, v1, work, ke0, ke1 } => false,
+        StepOut.BadDim => true,
+        StepOut.DivByZero => false,
+    };
+    // Zero mass passes dimensional construction but the stepper
+    // refuses the F/m division structurally.
+    let zero: bool = match body(quantity_si(0.0, dim_mass()), quantity_si(0.0, dim_length()), quantity_si(0.0, dim_velocity())) {
+        BodyOut.Value { b: zb } => zero_mass_refused(zb),
+        BodyOut.BadDim => false,
+    };
+    return badf && badt && zero;
+}
+
+fn zero_mass_refused(zb: Body1) -> (result: bool) {
+    return match step_const_force(zb, zero_force(), quantity_si(1.0, dim_time())) {
+        StepOut.Value { x1, v1, work, ke0, ke1 } => false,
+        StepOut.BadDim => false,
+        StepOut.DivByZero => true,
+    };
+}
+
+test consumer_fixtures_pressure_stiffness_ev() -> (result: TestResult) {
+    // What neighbors would consume: standard atmosphere as an energy
+    // density over volume, stiffness scale, H ionization energy.
+    // Physics proves the dimensions; the equations stay elsewhere.
+    let tol: f64 = 0.000000000001;
+    let atm: bool = match q_div(quantity_si(101325.0, dim_force()), quantity_si(1.0, dim_area())) {
+        QDivOut.Value { q } => q_has_dim(q, dim_pressure()) && approx(q.value, 101325.0, tol, tol),
+        QDivOut.DivByZero => false,
+    };
+    let atm_bar: bool = match q_value_in(quantity_si(101325.0, dim_pressure()), bar()) {
+        QValOut.Value { value } => approx(value, 1.01325, tol, tol),
+        QValOut.BadDim => false,
+    };
+    let stiff: bool = dim_eq(unit_dim(newton_per_metre()), dim_stiffness());
+    let ion: Quantity = quantity_in(13.6, electronvolt());
+    let iong: bool = q_has_dim(ion, dim_energy()) && approx(ion.value, 0.00000000000000000217896022224, 0.0, 0.000000001);
+    return from_assertion(equals_bool(true, atm && atm_bar && stiff && iong, 7707));
+}

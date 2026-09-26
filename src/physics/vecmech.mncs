@@ -1,0 +1,198 @@
+mncs 0.18;
+
+// mncs.physics.vecmech.v1 — physical vectors over Geometry structure.
+//
+// Physics assigns meaning; Geometry owns structure. Every vector
+// here is a nominal wrapper around `Vec2` (length-2 displacement
+// semantics: add/sub/scale/neg/dot/length-squared all come from
+// `mncs.geometry.point2` and are never re-implemented):
+//
+//   Disp2  displacement (L)      Vel2  velocity (L/T)
+//   Acc2   acceleration (L/T²)   Force2 force (ML/T²)
+//   Mom2   momentum (ML/T)
+//
+// The wrappers make `Force2 + Disp2` unspellable: no such function
+// exists, exactly as `point + point` is unspellable in Geometry.
+// Component conversions between vector kinds go through checked
+// quantity relations (time durations, masses), so dividing a
+// displacement by a mass is `BadDim` data rather than a fast wrong
+// vector. Work W = F · d and kinetic energy from speed-squared give
+// the dot product its physical reading without touching Math.
+
+module mncs.physics.vecmech.v1;
+
+use mncs.geometry.point2;
+use mncs.physics.dim;
+use mncs.physics.unit;
+use mncs.physics.quantity;
+use mncs.numerics.scalar_float;
+
+record Disp2 { v: Vec2 }
+
+record Vel2 { v: Vec2 }
+
+record Acc2 { v: Vec2 }
+
+record Force2 { v: Vec2 }
+
+record Mom2 { v: Vec2 }
+
+// --- constructors (SI components) ---
+
+fn disp2(x: f64, y: f64) -> (result: Disp2) {
+    return Disp2 { v: vec2(x, y) };
+}
+
+fn vel2(x: f64, y: f64) -> (result: Vel2) {
+    return Vel2 { v: vec2(x, y) };
+}
+
+fn acc2(x: f64, y: f64) -> (result: Acc2) {
+    return Acc2 { v: vec2(x, y) };
+}
+
+fn force2(x: f64, y: f64) -> (result: Force2) {
+    return Force2 { v: vec2(x, y) };
+}
+
+fn mom2(x: f64, y: f64) -> (result: Mom2) {
+    return Mom2 { v: vec2(x, y) };
+}
+
+// Outcome of constructing a physical vector from unit-scaled parts.
+enum VConOut { Disp { d: Disp2 }, BadDim }
+
+// Displacement from components expressed in a length unit.
+fn disp2_in(x: f64, y: f64, u: Unit) -> (result: VConOut) {
+    if dim_eq(u.dim, dim_length()) == false {
+        return VConOut.BadDim;
+    }
+    return VConOut.Disp { d: Disp2 { v: vec2(x * u.scale, y * u.scale) } };
+}
+
+// --- same-kind vector algebra (Geometry does the work) ---
+
+fn disp_add(a: Disp2, b: Disp2) -> (result: Disp2) {
+    return Disp2 { v: vec_add(a.v, b.v) };
+}
+
+fn disp_sub(a: Disp2, b: Disp2) -> (result: Disp2) {
+    return Disp2 { v: vec_sub(a.v, b.v) };
+}
+
+fn disp_neg(d: Disp2) -> (result: Disp2) {
+    return Disp2 { v: vec_neg(d.v) };
+}
+
+fn disp_scale(d: Disp2, s: f64) -> (result: Disp2) {
+    return Disp2 { v: vec_scale(d.v, s) };
+}
+
+fn vel_add(a: Vel2, b: Vel2) -> (result: Vel2) {
+    return Vel2 { v: vec_add(a.v, b.v) };
+}
+
+fn vel_sub(a: Vel2, b: Vel2) -> (result: Vel2) {
+    return Vel2 { v: vec_sub(a.v, b.v) };
+}
+
+fn vel_scale(v: Vel2, s: f64) -> (result: Vel2) {
+    return Vel2 { v: vec_scale(v.v, s) };
+}
+
+fn force_add(a: Force2, b: Force2) -> (result: Force2) {
+    return Force2 { v: vec_add(a.v, b.v) };
+}
+
+fn force_neg(f: Force2) -> (result: Force2) {
+    return Force2 { v: vec_neg(f.v) };
+}
+
+// --- cross-kind checked conversions ---
+
+// Outcome of a vector rate conversion.
+enum VRateOut { Vel { v: Vel2 }, BadDim, DivByZero }
+
+enum ARateOut { Acc { a: Acc2 }, BadDim, DivByZero }
+
+// v = d / dt: displacement over a time duration is velocity.
+// A mass-typed duration argument is BadDim, not a fast answer.
+fn vel_from_disp(d: Disp2, dt: Quantity) -> (result: VRateOut) {
+    if q_has_dim(dt, dim_time()) == false {
+        return VRateOut.BadDim;
+    }
+    return match safe_div(d.v.x, dt.value) {
+        FDiv.Value { value: vx } => vel_from_disp_y(d, dt, vx),
+        FDiv.DivByZero => VRateOut.DivByZero,
+    };
+}
+
+fn vel_from_disp_y(d: Disp2, dt: Quantity, vx: f64) -> (result: VRateOut) {
+    return match safe_div(d.v.y, dt.value) {
+        FDiv.Value { value: vy } => VRateOut.Vel { v: Vel2 { v: vec2(vx, vy) } },
+        FDiv.DivByZero => VRateOut.DivByZero,
+    };
+}
+
+// a = dv / dt: velocity change over a time duration.
+fn acc_from_vel(dv: Vel2, dt: Quantity) -> (result: ARateOut) {
+    if q_has_dim(dt, dim_time()) == false {
+        return ARateOut.BadDim;
+    }
+    return match safe_div(dv.v.x, dt.value) {
+        FDiv.Value { value: ax } => acc_from_vel_y(dv, dt, ax),
+        FDiv.DivByZero => ARateOut.DivByZero,
+    };
+}
+
+fn acc_from_vel_y(dv: Vel2, dt: Quantity, ax: f64) -> (result: ARateOut) {
+    return match safe_div(dv.v.y, dt.value) {
+        FDiv.Value { value: ay } => ARateOut.Acc { a: Acc2 { v: vec2(ax, ay) } },
+        FDiv.DivByZero => ARateOut.DivByZero,
+    };
+}
+
+// Outcome of mass-scaled vector conversions.
+enum FMassOut { Force { f: Force2 }, BadDim }
+
+enum MMassOut { Mom { p: Mom2 }, BadDim }
+
+// F = m a componentwise: mass-typed scalar required.
+fn force_from_mass_acc(m: Quantity, a: Acc2) -> (result: FMassOut) {
+    if q_has_dim(m, dim_mass()) == false {
+        return FMassOut.BadDim;
+    }
+    return FMassOut.Force { f: Force2 { v: vec_scale(a.v, m.value) } };
+}
+
+// p = m v componentwise.
+fn mom_from_mass_vel(m: Quantity, v: Vel2) -> (result: MMassOut) {
+    if q_has_dim(m, dim_mass()) == false {
+        return MMassOut.BadDim;
+    }
+    return MMassOut.Mom { p: Mom2 { v: vec_scale(v.v, m.value) } };
+}
+
+// --- scalar readings with physical dimension ---
+
+// W = F · d: the dot product read as energy (exact binary64 ops,
+// matching Geometry's exactness contract for dot).
+fn work_from_force_disp(f: Force2, d: Disp2) -> (result: Quantity) {
+    return Quantity { value: dot(f.v, d.v), dim: dim_energy() };
+}
+
+// K = m |v|² / 2 from the exact length-squared.
+enum KVecOut { Value { q: Quantity }, BadDim }
+
+fn ke_from_mass_vel(m: Quantity, v: Vel2) -> (result: KVecOut) {
+    if q_has_dim(m, dim_mass()) == false {
+        return KVecOut.BadDim;
+    }
+    let k: f64 = 0.5 * m.value * length2(v.v);
+    return KVecOut.Value { q: Quantity { value: k, dim: dim_energy() } };
+}
+
+// Speed-squared |v|² as a quantity of dimension L²/T².
+fn speed2_from_vel(v: Vel2) -> (result: Quantity) {
+    return Quantity { value: length2(v.v), dim: dim_pow(dim_velocity(), 2) };
+}

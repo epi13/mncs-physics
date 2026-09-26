@@ -1,6 +1,6 @@
 # RFC 0001: Scientific physics foundation
 
-Status: Draft
+Status: Partially implemented (foundation 2026-09-26)
 
 ## Purpose
 
@@ -22,3 +22,24 @@ Units at compile time, generic numeric types, vector/tensor ergonomics, determin
 ## Non-goals
 
 This repository is not a game-physics shortcut layer and does not initially attempt every branch of physics. Breadth follows verified foundations.
+
+## Implementation record (foundation 2026-09-26)
+
+Retained: quantities carry dimensions through computation (runtime
+`Dim` vectors + outcome enums); precision/tolerance discipline
+consumed from Numerics (`approx`, `safe_div`, `sqrt_newton`);
+conservation as first-class tests (bitwise free-motion, work-energy);
+reference-data provenance on constants (SI Brochure 9e / CODATA 2022).
+
+Redesigned: compile-time unit algebra → runtime structural checks
+(P-PHYSICS-DIM); generic numeric-type polymorphism → concrete f64
+quantities with i64 exponents; universal `PhysicalSystem`/
+interaction taxonomy → one concrete `Body1` + checked relations;
+solver-tolerance framework → per-relation outcome enums.
+
+Delegated: numeric representation to Numerics; vector algebra to
+Geometry (via `Vec2`); test execution to mncs-test.
+
+Excluded: rigid bodies, thermo/EM/optics/orbital equations,
+uncertainty arithmetic, Store/Lineage integration, cross-backend
+claims — each with a pressure or boundary note, not silent omission.

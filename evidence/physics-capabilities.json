@@ -1,0 +1,46 @@
+{
+  "capabilities": [
+    "SI dimension vectors with structural compatibility and composition",
+    "named units as scale plus dimension with explicit conversion outcomes",
+    "affine Celsius handling with Fahrenheit out of scope",
+    "quantities as SI value plus dimension with checked arithmetic",
+    "pinned SI/CODATA constants with uncertainty and definitional status",
+    "computed derived constants through quantity composition",
+    "checked scalar mechanics relations with textbook verification",
+    "physical vectors over Geometry structure with cross-kind checks",
+    "constant-force 1D slice with bitwise conservation and work-energy",
+    "second-consumer fixtures for Fluid FEM Atomic dimensions"
+  ],
+  "doc": "docs/PHYSICS_MODEL.md",
+  "dynamics": {
+    "horizon": "single exact constant-force step plus two-step composition",
+    "integrator": "closed-form update, no iterative solver in this slice",
+    "reference_run": "1kg drop under -g0 for 1s: v=-g0, x=-g0/2, work-energy agreement 1e-12"
+  },
+  "formulation": {
+    "dimensions": "7-exponent SI vectors as runtime data with outcome-enum enforcement",
+    "quantities": "SI value plus dimension; nominally distinct from bare f64",
+    "units": "scale plus dimension; compatibility by dimension, never by name"
+  },
+  "history": [
+    "bootstrap: architecture docs only, no implementation",
+    "foundation: first canonical native implementation (this revision)"
+  ],
+  "implementation": "first and only canonical implementation; no version forks, no native/host split, no compatibility layers",
+  "language": "mncs 0.18",
+  "meaning": "generic physical semantics layered over mathematics; explicitly not CPU atomics, quantum chemistry, fluids, FEM, or game physics",
+  "modules": [
+    "mncs.physics.dim.v1",
+    "mncs.physics.unit.v1",
+    "mncs.physics.quantity.v1",
+    "mncs.physics.constant.v1",
+    "mncs.physics.mech.v1",
+    "mncs.physics.vecmech.v1",
+    "mncs.physics.model1d.v1"
+  ],
+  "neighbors": {
+    "consumes": ["mncs-numerics (approx, safe_div, sqrt)", "mncs-geometry (Vec2)", "mncs-test (execution)"],
+    "feeds": ["fluid (pressure)", "fem (stiffness)", "atomic (eV energy)"],
+    "read_only": ["mncs-language", "mncs-compiler", "mncs-atomic", "mncs-control", "mncs-doc", "mncs-fem", "mncs-fluid", "mncs-media", "mncs-automation"]
+  }
+}

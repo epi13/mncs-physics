@@ -1,0 +1,90 @@
+mncs 0.18;
+
+// Native contracts for reference constants: exact definers pinned
+// bitwise, measured values pinned within stated tolerances,
+// definitional status honest, and derived constants computed through
+// the quantity layer rather than copy-pasted.
+
+module mncs.physics.test.constant.v1;
+
+use mncs.test.assertions;
+use mncs.test.suite;
+use mncs.physics.dim;
+use mncs.physics.quantity;
+use mncs.physics.constant;
+use mncs.numerics.scalar_float;
+
+test exact_definers_pinned() -> (result: TestResult) {
+    let c: Const = const_c();
+    let cg: bool = c.q.value == 299792458.0 && q_has_dim(c.q, dim_velocity()) && c.exact && c.rel_unc == 0.0;
+    let dcs: Const = const_dcs();
+    let dg: bool = dcs.q.value == 9192631770.0 && q_has_dim(dcs.q, dim_frequency()) && dcs.exact;
+    let g0: Const = const_g0();
+    let gg: bool = g0.q.value == 9.80665 && q_has_dim(g0.q, dim_acceleration()) && g0.exact;
+    let pi: bool = pi_value() == 3.141592653589793;
+    return from_assertion(equals_bool(true, cg && dg && gg && pi, 7401));
+}
+
+test planck_boltzmann_charge_avogadro() -> (result: TestResult) {
+    let tol: f64 = 0.000000000001;
+    let h: Const = const_h();
+    let hg: bool = approx(h.q.value, 0.000000000000000000000000000000000662607015, 0.0, tol) && h.exact;
+    let had: bool = dim_eq(h.q.dim, dim_mul(dim_energy(), dim_time()));
+    let kb: Const = const_kb();
+    let kg: bool = approx(kb.q.value, 0.00000000000000000000001380649, 0.0, tol) && kb.exact;
+    let e: Const = const_e();
+    let eg: bool = approx(e.q.value, 0.0000000000000000001602176634, 0.0, tol) && q_has_dim(e.q, dim_charge()) && e.exact;
+    let na: Const = const_na();
+    let ng: bool = approx(na.q.value, 602214076000000000000000.0, 0.0, tol) && na.exact;
+    return from_assertion(equals_bool(true, hg && had && kg && eg && ng, 7402));
+}
+
+test hbar_computed_from_h() -> (result: TestResult) {
+    // h / (2 pi) through code, pinned against 1.054571817e-34.
+    let hb: Const = const_hbar();
+    let good: bool = approx(hb.q.value, 0.0000000000000000000000000000000001054571817, 0.0, 0.000000001) && hb.exact;
+    let hadd: bool = dim_eq(hb.q.dim, dim_mul(dim_energy(), dim_time()));
+    return from_assertion(equals_bool(true, good && hadd, 7403));
+}
+
+test gas_constant_computed_from_na_kb() -> (result: TestResult) {
+    // NA * kB = 8.31446261815324 J/(mol K): exact by definition.
+    let r: Const = const_r_gas();
+    let good: bool = approx(r.q.value, 8.31446261815324, 0.000000000001, 0.000000000001) && r.exact;
+    let want: Dim = dim_div(dim_energy(), dim_mul(dim_temperature(), dim_amount()));
+    let dimensional: bool = dim_eq(r.q.dim, want);
+    return from_assertion(equals_bool(true, good && dimensional, 7404));
+}
+
+test stefan_boltzmann_computed() -> (result: TestResult) {
+    // 2 pi^5 kB^4 / (15 c^2 h^3) against 5.670374419e-8.
+    let s: Const = const_sigma_sb();
+    let good: bool = approx(s.q.value, 0.00000005670374419, 0.0, 0.000000001);
+    return from_assertion(equals_bool(true, good, 7405));
+}
+
+test measured_constants_carry_uncertainty() -> (result: TestResult) {
+    let tol: f64 = 0.000000000001;
+    let g: Const = const_g_newton();
+    let gg: bool = approx(g.q.value, 0.0000000000667430, 0.0, tol) && g.exact == false && g.rel_unc == 0.000022;
+    let me: Const = const_m_electron();
+    let mg: bool = approx(me.q.value, 0.00000000000000000000000000000091093837131, 0.0, tol) && me.exact == false;
+    let mp: Const = const_m_proton();
+    let pg: bool = approx(mp.q.value, 0.00000000000000000000000000167262192595, 0.0, tol) && mp.exact == false;
+    let u: Const = const_u();
+    let ug: bool = approx(u.q.value, 0.00000000000000000000000000166053906892, 0.0, tol) && u.exact == false;
+    let e0: Const = const_eps0();
+    let e0g: bool = approx(e0.q.value, 0.0000000000088541878188, 0.0, tol) && e0.exact == false;
+    return from_assertion(equals_bool(true, gg && mg && pg && ug && e0g, 7406));
+}
+
+test measured_dimensions_compose() -> (result: TestResult) {
+    let g: bool = dim_eq(const_value(const_g_newton()).dim, dim_div(dim_volume(), dim_mul(dim_mass(), dim_pow(dim_time(), 2))));
+    let m: bool = q_has_dim(const_value(const_m_electron()), dim_mass()) && q_has_dim(const_value(const_u()), dim_mass());
+    // eps0: C^2 / (J m).
+    let want: Dim = dim_div(dim_pow(dim_charge(), 2), dim_mul(dim_energy(), dim_length()));
+    let e0: bool = dim_eq(const_value(const_eps0()).dim, want);
+    // Accessors agree with fields.
+    let acc: bool = const_unc(const_g_newton()) == 0.000022 && const_is_exact(const_c());
+    return from_assertion(equals_bool(true, g && m && e0 && acc, 7407));
+}

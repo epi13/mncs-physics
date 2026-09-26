@@ -1,0 +1,246 @@
+mncs 0.18;
+
+// mncs.physics.unit.v1 — named units as scale + dimension.
+//
+// A unit is NOT a string and NOT a dimension. It is a presentation
+// and conversion record: `scale` SI units per one of this unit, plus
+// the physical dimension it represents. Compatibility is decided by
+// `dim_eq` on the dimension; conversion multiplies by the source
+// scale and divides by the target scale. Metre and foot share a
+// dimension and convert; metre and second never do (`BadDim` data,
+// never a trap, never a silent rescale).
+//
+// Exact vs floating conversions: ratios of powers of ten (km <-> m)
+// and exact binary fractions are bitwise exact; inch/foot/mile are
+// exact decimals by international definition but not exact binary,
+// so cross-system tests use `approx` with stated tolerances while
+// same-literal oracle checks stay bitwise. Temperature affine units
+// (Celsius) are explicit offset functions, never multiplicative
+// units: absolute and difference semantics stay distinct, and
+// Fahrenheit is out of scope for this foundation.
+//
+// Only units needed by the implemented foundation and its consumer
+// fixtures are provided. Viscosity, stiffness, and electron-volt
+// scales appear because Fluid/FEM/Atomic fixtures consume them —
+// the equations that use them stay in their domains.
+
+module mncs.physics.unit.v1;
+
+use mncs.physics.dim;
+
+// SI units per one of this unit: value_SI = value_unit * scale.
+// scale is always positive for every constructor below.
+record Unit { scale: f64, dim: Dim }
+
+fn unit(scale: f64, dim: Dim) -> (result: Unit) {
+    return Unit { scale: scale, dim: dim };
+}
+
+fn unit_scale(u: Unit) -> (result: f64) {
+    return u.scale;
+}
+
+fn unit_dim(u: Unit) -> (result: Dim) {
+    return u.dim;
+}
+
+// Two units convert exactly when their dimensions agree.
+fn units_compatible(a: Unit, b: Unit) -> (result: bool) {
+    return dim_eq(a.dim, b.dim);
+}
+
+// Outcome of converting a value between units.
+enum ConvOut { Value { value: f64 }, BadDim }
+
+fn convert(v: f64, from: Unit, to: Unit) -> (result: ConvOut) {
+    if units_compatible(from, to) == false {
+        return ConvOut.BadDim;
+    }
+    return ConvOut.Value { value: v * from.scale / to.scale };
+}
+
+// --- length (dimension L) ---
+
+fn metre() -> (result: Unit) {
+    return Unit { scale: 1.0, dim: dim_length() };
+}
+
+fn kilometre() -> (result: Unit) {
+    return Unit { scale: 1000.0, dim: dim_length() };
+}
+
+fn centimetre() -> (result: Unit) {
+    return Unit { scale: 0.01, dim: dim_length() };
+}
+
+fn millimetre() -> (result: Unit) {
+    return Unit { scale: 0.001, dim: dim_length() };
+}
+
+fn micrometre() -> (result: Unit) {
+    return Unit { scale: 0.000001, dim: dim_length() };
+}
+
+fn nanometre() -> (result: Unit) {
+    return Unit { scale: 0.000000001, dim: dim_length() };
+}
+
+// 1 A = 1e-10 m exactly (accepted non-SI unit).
+fn angstrom() -> (result: Unit) {
+    return Unit { scale: 0.0000000001, dim: dim_length() };
+}
+
+// International yard/pound agreement (1959): exact decimals.
+fn inch() -> (result: Unit) {
+    return Unit { scale: 0.0254, dim: dim_length() };
+}
+
+fn foot() -> (result: Unit) {
+    return Unit { scale: 0.3048, dim: dim_length() };
+}
+
+fn mile() -> (result: Unit) {
+    return Unit { scale: 1609.344, dim: dim_length() };
+}
+
+// --- mass (dimension M) ---
+
+fn kilogram() -> (result: Unit) {
+    return Unit { scale: 1.0, dim: dim_mass() };
+}
+
+fn gram() -> (result: Unit) {
+    return Unit { scale: 0.001, dim: dim_mass() };
+}
+
+fn tonne() -> (result: Unit) {
+    return Unit { scale: 1000.0, dim: dim_mass() };
+}
+
+// --- time (dimension T) ---
+
+fn second() -> (result: Unit) {
+    return Unit { scale: 1.0, dim: dim_time() };
+}
+
+fn minute() -> (result: Unit) {
+    return Unit { scale: 60.0, dim: dim_time() };
+}
+
+fn hour() -> (result: Unit) {
+    return Unit { scale: 3600.0, dim: dim_time() };
+}
+
+fn day() -> (result: Unit) {
+    return Unit { scale: 86400.0, dim: dim_time() };
+}
+
+// --- mechanics derived units ---
+
+fn newton() -> (result: Unit) {
+    return Unit { scale: 1.0, dim: dim_force() };
+}
+
+fn joule() -> (result: Unit) {
+    return Unit { scale: 1.0, dim: dim_energy() };
+}
+
+// Exact by SI definition (elementary charge): 1 eV = 1.602176634e-19 J.
+fn electronvolt() -> (result: Unit) {
+    return Unit { scale: 0.0000000000000000001602176634, dim: dim_energy() };
+}
+
+fn watt() -> (result: Unit) {
+    return Unit { scale: 1.0, dim: dim_power() };
+}
+
+fn pascal() -> (result: Unit) {
+    return Unit { scale: 1.0, dim: dim_pressure() };
+}
+
+fn bar() -> (result: Unit) {
+    return Unit { scale: 100000.0, dim: dim_pressure() };
+}
+
+// 1 psi = 1 lbf/in^2 with the exact pound and inch: 6894.757293178 Pa.
+fn psi() -> (result: Unit) {
+    return Unit { scale: 6894.757293178, dim: dim_pressure() };
+}
+
+fn hertz() -> (result: Unit) {
+    return Unit { scale: 1.0, dim: dim_frequency() };
+}
+
+fn metre_per_second() -> (result: Unit) {
+    return Unit { scale: 1.0, dim: dim_velocity() };
+}
+
+fn kilometre_per_hour() -> (result: Unit) {
+    return Unit { scale: 1000.0 / 3600.0, dim: dim_velocity() };
+}
+
+fn square_metre() -> (result: Unit) {
+    return Unit { scale: 1.0, dim: dim_area() };
+}
+
+fn cubic_metre() -> (result: Unit) {
+    return Unit { scale: 1.0, dim: dim_volume() };
+}
+
+// Newton per metre: the stiffness scale an FEM fixture consumes.
+fn newton_per_metre() -> (result: Unit) {
+    return Unit { scale: 1.0, dim: dim_stiffness() };
+}
+
+// --- electromagnetic / thermal / amount units (names for fixtures) ---
+
+fn coulomb() -> (result: Unit) {
+    return Unit { scale: 1.0, dim: dim_charge() };
+}
+
+fn volt() -> (result: Unit) {
+    return Unit { scale: 1.0, dim: dim_voltage() };
+}
+
+fn kelvin() -> (result: Unit) {
+    return Unit { scale: 1.0, dim: dim_temperature() };
+}
+
+fn mole() -> (result: Unit) {
+    return Unit { scale: 1.0, dim: dim_amount() };
+}
+
+fn ampere() -> (result: Unit) {
+    return Unit { scale: 1.0, dim: dim_current() };
+}
+
+// --- dimensionless angle units ---
+//
+// Angles are dimensionless (radians). Math/Geometry own angle
+// semantics; Physics provides only the presentation conversion so
+// degree/radian mistakes have one explicit site. The factor is the
+// nearest double to pi/180, pinned bitwise against the oracle.
+
+fn radian() -> (result: Unit) {
+    return Unit { scale: 1.0, dim: dimless() };
+}
+
+fn degree() -> (result: Unit) {
+    return Unit { scale: 0.017453292519943295, dim: dimless() };
+}
+
+// --- affine temperature ---
+//
+// Celsius is not a `Unit`: T/K = T/C + 273.15 is affine, and an
+// absolute temperature and a temperature difference convert
+// differently. Absolute conversions are explicit functions here;
+// differences use the kelvin scale directly (1 K = 1 degC step).
+// Fahrenheit is out of scope for this foundation.
+
+fn celsius_to_kelvin(t_c: f64) -> (result: f64) {
+    return t_c + 273.15;
+}
+
+fn kelvin_to_celsius(t_k: f64) -> (result: f64) {
+    return t_k - 273.15;
+}

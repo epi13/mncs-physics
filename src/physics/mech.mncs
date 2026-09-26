@@ -1,0 +1,211 @@
+mncs 0.18;
+
+// mncs.physics.mech.v1 — generic scalar mechanics relationships.
+//
+// Each relationship is a CHECKED function over quantities, not an
+// unchecked formula over floats:
+//
+//   force    F = m a            (mass × acceleration)
+//   momentum p = m v            (mass × velocity)
+//   kinetic  K = m v² / 2       (mass × velocity squared, halved)
+//   work     W = F · d          (scalar force × displacement)
+//   power    P = E / t          (energy per duration)
+//   weight   W = m g0           (mass × standard gravity)
+//   kinematics v = v0 + a t, x = x0 + v0 t + a t² / 2
+//   speed    |v| = sqrt(2K / m) (checked root, nonnegative energy)
+//
+// Dot product is Math's; work = force · displacement is Physics'
+// assignment of meaning to it (the vector form lives in vecmech).
+// Outcomes are structural: `BadDim` when an input carries the wrong
+// dimension, `DivByZero` for zero divisors, `BadValue` for negative
+// energy under the root. Nothing traps, nothing coerces.
+//
+// This is deliberately a small set of named relations rather than
+// generic operator overloading: the language cannot express
+// dimension-generic operators today (pressure P-PHYSICS-DIM), and a
+// generated overload table would hide that fact. The relations that
+// exist are exactly the ones the vertical slice needs.
+
+module mncs.physics.mech.v1;
+
+use mncs.physics.dim;
+use mncs.physics.quantity;
+use mncs.physics.constant;
+use mncs.numerics.scalar_float;
+
+// Outcome of a dimensionally checked mechanics relation.
+enum MechOut { Value { q: Quantity }, BadDim }
+
+// Outcome of a relation that also divides by an input value.
+enum MechDivOut { Value { q: Quantity }, BadDim, DivByZero }
+
+// Outcome of the energy-to-speed root.
+enum MechRootOut { Value { q: Quantity }, BadDim, BadValue, DivByZero }
+
+// F = m a: mass and acceleration in, force out.
+fn force_of(m: Quantity, a: Quantity) -> (result: MechOut) {
+    if q_has_dim(m, dim_mass()) == false {
+        return MechOut.BadDim;
+    }
+    if q_has_dim(a, dim_acceleration()) == false {
+        return MechOut.BadDim;
+    }
+    return MechOut.Value { q: q_mul(m, a) };
+}
+
+// p = m v: mass and velocity in, momentum out.
+fn momentum_of(m: Quantity, v: Quantity) -> (result: MechOut) {
+    if q_has_dim(m, dim_mass()) == false {
+        return MechOut.BadDim;
+    }
+    if q_has_dim(v, dim_velocity()) == false {
+        return MechOut.BadDim;
+    }
+    return MechOut.Value { q: q_mul(m, v) };
+}
+
+// K = m v² / 2: mass and velocity in, energy out.
+fn ke_of(m: Quantity, v: Quantity) -> (result: MechOut) {
+    if q_has_dim(m, dim_mass()) == false {
+        return MechOut.BadDim;
+    }
+    if q_has_dim(v, dim_velocity()) == false {
+        return MechOut.BadDim;
+    }
+    let v2: Quantity = q_mul(v, v);
+    return MechOut.Value { q: q_scale(q_mul(m, v2), 0.5) };
+}
+
+// W = F d (collinear scalar form): force and length in, energy out.
+fn work_of(f: Quantity, d: Quantity) -> (result: MechOut) {
+    if q_has_dim(f, dim_force()) == false {
+        return MechOut.BadDim;
+    }
+    if q_has_dim(d, dim_length()) == false {
+        return MechOut.BadDim;
+    }
+    return MechOut.Value { q: q_mul(f, d) };
+}
+
+// P = E / t: energy and duration in, power out.
+fn power_of(e: Quantity, t: Quantity) -> (result: MechDivOut) {
+    if q_has_dim(e, dim_energy()) == false {
+        return MechDivOut.BadDim;
+    }
+    if q_has_dim(t, dim_time()) == false {
+        return MechDivOut.BadDim;
+    }
+    return match q_div(e, t) {
+        QDivOut.Value { q } => MechDivOut.Value { q: q },
+        QDivOut.DivByZero => MechDivOut.DivByZero,
+    };
+}
+
+// a = F / m: force and mass in, acceleration out.
+fn accel_of(f: Quantity, m: Quantity) -> (result: MechDivOut) {
+    if q_has_dim(f, dim_force()) == false {
+        return MechDivOut.BadDim;
+    }
+    if q_has_dim(m, dim_mass()) == false {
+        return MechDivOut.BadDim;
+    }
+    return match q_div(f, m) {
+        QDivOut.Value { q } => MechDivOut.Value { q: q },
+        QDivOut.DivByZero => MechDivOut.DivByZero,
+    };
+}
+
+// v = p / m: momentum and mass in, velocity out.
+fn vel_of(p: Quantity, m: Quantity) -> (result: MechDivOut) {
+    if q_has_dim(p, dim_momentum()) == false {
+        return MechDivOut.BadDim;
+    }
+    if q_has_dim(m, dim_mass()) == false {
+        return MechDivOut.BadDim;
+    }
+    return match q_div(p, m) {
+        QDivOut.Value { q } => MechDivOut.Value { q: q },
+        QDivOut.DivByZero => MechDivOut.DivByZero,
+    };
+}
+
+// Weight W = m g0 with the conventional standard gravity.
+fn weight_of(m: Quantity) -> (result: MechOut) {
+    if q_has_dim(m, dim_mass()) == false {
+        return MechOut.BadDim;
+    }
+    let g0: Quantity = const_value(const_g0());
+    return MechOut.Value { q: q_mul(m, g0) };
+}
+
+// Constant-acceleration kinematics: v = v0 + a t.
+fn kin_v(v0: Quantity, a: Quantity, t: Quantity) -> (result: MechOut) {
+    if q_has_dim(v0, dim_velocity()) == false {
+        return MechOut.BadDim;
+    }
+    if q_has_dim(a, dim_acceleration()) == false {
+        return MechOut.BadDim;
+    }
+    if q_has_dim(t, dim_time()) == false {
+        return MechOut.BadDim;
+    }
+    let gain: Quantity = q_mul(a, t);
+    return match q_add(v0, gain) {
+        QAddOut.Value { q } => MechOut.Value { q: q },
+        QAddOut.BadDim => MechOut.BadDim,
+    };
+}
+
+// Constant-acceleration kinematics: x = x0 + v0 t + a t² / 2.
+fn kin_x(x0: Quantity, v0: Quantity, a: Quantity, t: Quantity) -> (result: MechOut) {
+    if q_has_dim(x0, dim_length()) == false {
+        return MechOut.BadDim;
+    }
+    if q_has_dim(v0, dim_velocity()) == false {
+        return MechOut.BadDim;
+    }
+    if q_has_dim(a, dim_acceleration()) == false {
+        return MechOut.BadDim;
+    }
+    if q_has_dim(t, dim_time()) == false {
+        return MechOut.BadDim;
+    }
+    let lin: Quantity = q_mul(v0, t);
+    let quad: Quantity = q_scale(q_mul(a, q_mul(t, t)), 0.5);
+    return match q_add(lin, quad) {
+        QAddOut.Value { q: dx } => kin_x_finish(x0, dx),
+        QAddOut.BadDim => MechOut.BadDim,
+    };
+}
+
+fn kin_x_finish(x0: Quantity, dx: Quantity) -> (result: MechOut) {
+    return match q_add(x0, dx) {
+        QAddOut.Value { q } => MechOut.Value { q: q },
+        QAddOut.BadDim => MechOut.BadDim,
+    };
+}
+
+// Speed from kinetic energy: |v| = sqrt(2K / m). Negative energy is
+// `BadValue` data (the Newton root would trap on a negative input,
+// so the guard must come first); zero mass is `DivByZero`.
+fn speed_from_ke(ke: Quantity, m: Quantity) -> (result: MechRootOut) {
+    if q_has_dim(ke, dim_energy()) == false {
+        return MechRootOut.BadDim;
+    }
+    if q_has_dim(m, dim_mass()) == false {
+        return MechRootOut.BadDim;
+    }
+    if ke.value < 0.0 {
+        return MechRootOut.BadValue;
+    }
+    if m.value == 0.0 {
+        return MechRootOut.DivByZero;
+    }
+    let v2: f64 = 2.0 * ke.value / m.value;
+    return match sqrt_newton(v2) {
+        FSqrt.Value { value } => MechRootOut.Value {
+            q: Quantity { value: value, dim: dim_velocity() }
+        },
+        FSqrt.DomainError => MechRootOut.BadValue,
+    };
+}

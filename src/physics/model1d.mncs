@@ -1,0 +1,131 @@
+mncs 0.18;
+
+// mncs.physics.model1d.v1 — constant-force 1D particle slice.
+//
+// The complete native vertical path:
+//
+//   typed mass + position + velocity + duration + applied force
+//     → exact constant-force state update
+//     (a = F/m; v' = v + a·dt; x' = x + v·dt + a·dt²/2)
+//     → momentum/energy bookkeeping + work done
+//     → conservation verdicts.
+//
+// `Body1` construction checks dimensions once (M, L, L/T); the
+// stepper re-checks force (ML/T²) and duration (T) and refuses zero
+// mass structurally. Free motion (F = 0) conserves momentum and
+// kinetic energy BITWISE — v is untouched, so p and K are identical
+// values, not approximations. Forced motion satisfies the
+// work-energy theorem K1 − K0 = W up to rounding, pinned with
+// `approx`.
+//
+// Canonical demonstration: a 1 kg body dropped from rest under its
+// own weight for 1 s (v = −g0, x = −g0/2, W = m g0²/2). Second
+// consumer fixtures (pressure for Fluid, stiffness for FEM,
+// electron-volt energy for Atomic) live in the test layer: they
+// prove these dimensions compose for neighbors without Physics
+// knowing any application semantics.
+
+module mncs.physics.model1d.v1;
+
+use mncs.physics.dim;
+use mncs.physics.quantity;
+
+// A 1D particle: mass (M), position (L), velocity (L/T), all SI.
+record Body1 { mass: Quantity, x: Quantity, v: Quantity }
+
+enum BodyOut { Value { b: Body1 }, BadDim }
+
+fn body(m: Quantity, x: Quantity, v: Quantity) -> (result: BodyOut) {
+    if q_has_dim(m, dim_mass()) == false {
+        return BodyOut.BadDim;
+    }
+    if q_has_dim(x, dim_length()) == false {
+        return BodyOut.BadDim;
+    }
+    if q_has_dim(v, dim_velocity()) == false {
+        return BodyOut.BadDim;
+    }
+    return BodyOut.Value { b: Body1 { mass: m, x: x, v: v } };
+}
+
+fn body_mass(b: Body1) -> (result: Quantity) {
+    return b.mass;
+}
+
+fn body_pos(b: Body1) -> (result: Quantity) {
+    return b.x;
+}
+
+fn body_vel(b: Body1) -> (result: f64) {
+    return b.v.value;
+}
+
+// p = m v of a constructed body (dimensions already proven).
+fn body_momentum(b: Body1) -> (result: Quantity) {
+    return q_mul(b.mass, b.v);
+}
+
+// K = m v² / 2 of a constructed body.
+fn body_ke(b: Body1) -> (result: Quantity) {
+    return q_scale(q_mul(b.mass, q_mul(b.v, b.v)), 0.5);
+}
+
+// The zero-force quantity: free motion without a null pointer.
+fn zero_force() -> (result: Quantity) {
+    return Quantity { value: 0.0, dim: dim_force() };
+}
+
+// Outcome of one constant-force step.
+enum StepOut {
+    Value { x1: Quantity, v1: Quantity, work: Quantity, ke0: Quantity, ke1: Quantity },
+    BadDim,
+    DivByZero
+}
+
+fn step_const_force(b: Body1, f: Quantity, dt: Quantity) -> (result: StepOut) {
+    if q_has_dim(f, dim_force()) == false {
+        return StepOut.BadDim;
+    }
+    if q_has_dim(dt, dim_time()) == false {
+        return StepOut.BadDim;
+    }
+    if q_has_dim(b.mass, dim_mass()) == false {
+        return StepOut.BadDim;
+    }
+    if b.mass.value == 0.0 {
+        return StepOut.DivByZero;
+    }
+    let a: f64 = f.value / b.mass.value;
+    let v1: f64 = b.v.value + a * dt.value;
+    let dx: f64 = b.v.value * dt.value + 0.5 * a * dt.value * dt.value;
+    let x1: f64 = b.x.value + dx;
+    let w: f64 = f.value * dx;
+    let ke0: f64 = 0.5 * b.mass.value * b.v.value * b.v.value;
+    let ke1: f64 = 0.5 * b.mass.value * v1 * v1;
+    return StepOut.Value {
+        x1: Quantity { value: x1, dim: dim_length() },
+        v1: Quantity { value: v1, dim: dim_velocity() },
+        work: Quantity { value: w, dim: dim_energy() },
+        ke0: Quantity { value: ke0, dim: dim_energy() },
+        ke1: Quantity { value: ke1, dim: dim_energy() }
+    };
+}
+
+// Advance a body record through one checked step.
+enum AdvanceOut { Value { b: Body1 }, BadDim, DivByZero }
+
+fn advance(b: Body1, f: Quantity, dt: Quantity) -> (result: AdvanceOut) {
+    return match step_const_force(b, f, dt) {
+        StepOut.Value { x1, v1, work, ke0, ke1 } => AdvanceOut.Value {
+            b: Body1 { mass: b.mass, x: x1, v: v1 }
+        },
+        StepOut.BadDim => AdvanceOut.BadDim,
+        StepOut.DivByZero => AdvanceOut.DivByZero,
+    };
+}
+
+// Work-energy residual: (K1 − K0) − W, an energy quantity whose
+// magnitude the suite bounds with `approx` against zero.
+fn work_energy_residual(ke0: Quantity, ke1: Quantity, work: Quantity) -> (result: Quantity) {
+    return Quantity { value: (ke1.value - ke0.value) - work.value, dim: dim_energy() };
+}

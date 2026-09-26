@@ -1,0 +1,67 @@
+mncs 0.18;
+
+// Native contracts for SI dimension vectors: base distinctness,
+// structural equality, composition laws, and derived identities.
+// Exponents are plain i64 data; compatibility is `dim_eq`.
+
+module mncs.physics.test.dim.v1;
+
+use mncs.test.assertions;
+use mncs.test.suite;
+use mncs.physics.dim;
+
+test base_dimensions_are_pairwise_distinct() -> (result: TestResult) {
+    let l: Dim = dim_length();
+    let m: Dim = dim_mass();
+    let t: Dim = dim_time();
+    let d0: Dim = dimless();
+    let good: bool = dim_eq(l, l) && dim_eq(m, m) && dim_eq(t, t);
+    let distinct: bool = dim_eq(l, m) == false && dim_eq(l, t) == false && dim_eq(m, t) == false;
+    let nondim: bool = dim_eq(l, d0) == false && dim_eq(d0, d0);
+    return from_assertion(equals_bool(true, good && distinct && nondim, 7101));
+}
+
+test derived_dimensions_match_composition() -> (result: TestResult) {
+    // velocity = L/T; acceleration = V/T; force = M·A;
+    // energy = F·L; power = E/T; pressure = F/A.
+    let vel: bool = dim_eq(dim_velocity(), dim_div(dim_length(), dim_time()));
+    let acc: bool = dim_eq(dim_acceleration(), dim_div(dim_velocity(), dim_time()));
+    let force: bool = dim_eq(dim_force(), dim_mul(dim_mass(), dim_acceleration()));
+    let energy: bool = dim_eq(dim_energy(), dim_mul(dim_force(), dim_length()));
+    let power: bool = dim_eq(dim_power(), dim_div(dim_energy(), dim_time()));
+    let press: bool = dim_eq(dim_pressure(), dim_div(dim_force(), dim_area()));
+    return from_assertion(equals_bool(true, vel && acc && force && energy && power && press, 7102));
+}
+
+test charge_voltage_and_density_identities() -> (result: TestResult) {
+    let charge: bool = dim_eq(dim_charge(), dim_mul(dim_current(), dim_time()));
+    let volt: bool = dim_eq(dim_voltage(), dim_div(dim_power(), dim_current()));
+    let volt2: bool = dim_eq(dim_voltage(), dim_div(dim_energy(), dim_charge()));
+    let dens: bool = dim_eq(dim_density(), dim_div(dim_mass(), dim_volume()));
+    let stiff: bool = dim_eq(dim_stiffness(), dim_div(dim_force(), dim_length()));
+    let mom: bool = dim_eq(dim_momentum(), dim_mul(dim_mass(), dim_velocity()));
+    return from_assertion(equals_bool(true, charge && volt && volt2 && dens && stiff && mom, 7103));
+}
+
+test composition_laws_holds() -> (result: TestResult) {
+    // mul/div invert; pow(0) is dimensionless; pow scales exponents.
+    let a: Dim = dim_velocity();
+    let b: Dim = dim_time();
+    let prod: Dim = dim_mul(a, b);
+    let back: bool = dim_eq(dim_div(prod, b), a);
+    let comm: bool = dim_eq(dim_mul(a, b), dim_mul(b, a));
+    let p0: bool = dim_eq(dim_pow(a, 0), dimless());
+    let p1: bool = dim_eq(dim_pow(a, 1), a);
+    let p2: bool = dim_eq(dim_pow(dim_length(), 2), dim_area());
+    let pneg: bool = dim_eq(dim_mul(a, dim_pow(a, -1)), dimless());
+    return from_assertion(equals_bool(true, back && comm && p0 && p1 && p2 && pneg, 7104));
+}
+
+test incompatible_dimensions_rejected() -> (result: TestResult) {
+    let good: bool = dim_eq(dim_force(), dim_energy()) == false;
+    let good2: bool = dim_eq(dim_pressure(), dim_energy()) == false;
+    let good3: bool = dim_eq(dim_momentum(), dim_velocity()) == false;
+    let good4: bool = dim_eq(dim_temperature(), dimless()) == false;
+    let good5: bool = dim_eq(dim_frequency(), dim_time()) == false;
+    return from_assertion(equals_bool(true, good && good2 && good3 && good4 && good5, 7105));
+}
