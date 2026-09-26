@@ -1,0 +1,173 @@
+mncs 0.18;
+
+// Native contracts for units: exact conversions, cross-system
+// conversions with stated tolerances, round trips, incompatibility
+// rejection, named-unit equivalence (joule == newton-metre
+// dimensionally), and affine Celsius handling.
+
+module mncs.physics.test.unit.v1;
+
+use mncs.test.assertions;
+use mncs.test.suite;
+use mncs.physics.dim;
+use mncs.physics.unit;
+use mncs.numerics.scalar_float;
+
+test metric_length_conversions_are_exact() -> (result: TestResult) {
+    let km: bool = match convert(1.0, kilometre(), metre()) {
+        ConvOut.Value { value } => value == 1000.0,
+        ConvOut.BadDim => false,
+    };
+    let cm: bool = match convert(2.0, centimetre(), metre()) {
+        ConvOut.Value { value } => value == 0.02,
+        ConvOut.BadDim => false,
+    };
+    let mm: bool = match convert(1500.0, millimetre(), metre()) {
+        ConvOut.Value { value } => value == 1.5,
+        ConvOut.BadDim => false,
+    };
+    let ang: bool = match convert(3.0, angstrom(), nanometre()) {
+        ConvOut.Value { value } => value == 0.3,
+        ConvOut.BadDim => false,
+    };
+    return from_assertion(equals_bool(true, km && cm && mm && ang, 7201));
+}
+
+test imperial_units_match_definitions() -> (result: TestResult) {
+    // 1959 international definitions: exact decimals.
+    let inch: bool = match convert(1.0, inch(), metre()) {
+        ConvOut.Value { value } => value == 0.0254,
+        ConvOut.BadDim => false,
+    };
+    let foot: bool = match convert(1.0, foot(), metre()) {
+        ConvOut.Value { value } => value == 0.3048,
+        ConvOut.BadDim => false,
+    };
+    let mile: bool = match convert(1.0, mile(), kilometre()) {
+        ConvOut.Value { value } => value == 1.609344,
+        ConvOut.BadDim => false,
+    };
+    // 12 inches per foot holds up to rounding (not bitwise: two
+    // inexact scales), so the suite states its tolerance.
+    let ft12: bool = match convert(12.0, inch(), foot()) {
+        ConvOut.Value { value } => approx(value, 1.0, 0.000000000001, 0.000000000001),
+        ConvOut.BadDim => false,
+    };
+    return from_assertion(equals_bool(true, inch && foot && mile && ft12, 7202));
+}
+
+test cross_system_conversions_use_tolerances() -> (result: TestResult) {
+    // 1 m in feet is not exact binary; both directions pinned.
+    let tof: bool = match convert(1.0, metre(), foot()) {
+        ConvOut.Value { value } => approx(value, 3.280839895013123, 0.000000000001, 0.000000000001),
+        ConvOut.BadDim => false,
+    };
+    let tom: bool = match convert(3.280839895013123, foot(), metre()) {
+        ConvOut.Value { value } => approx(value, 1.0, 0.000000000001, 0.000000000001),
+        ConvOut.BadDim => false,
+    };
+    let kph: bool = match convert(36.0, kilometre_per_hour(), metre_per_second()) {
+        ConvOut.Value { value } => approx(value, 10.0, 0.000000000001, 0.000000000001),
+        ConvOut.BadDim => false,
+    };
+    return from_assertion(equals_bool(true, tof && tom && kph, 7203));
+}
+
+test conversion_round_trips() -> (result: TestResult) {
+    let there: f64 = match convert(2.5, metre(), foot()) {
+        ConvOut.Value { value } => value,
+        ConvOut.BadDim => 0.0 - 1.0,
+    };
+    let back: bool = match convert(there, foot(), metre()) {
+        ConvOut.Value { value } => approx(value, 2.5, 0.000000000001, 0.000000000001),
+        ConvOut.BadDim => false,
+    };
+    let psi_there: f64 = match convert(14.7, psi(), pascal()) {
+        ConvOut.Value { value } => value,
+        ConvOut.BadDim => 0.0 - 1.0,
+    };
+    let psi_back: bool = match convert(psi_there, pascal(), psi()) {
+        ConvOut.Value { value } => approx(value, 14.7, 0.000000000001, 0.000000000001),
+        ConvOut.BadDim => false,
+    };
+    return from_assertion(equals_bool(true, back && psi_back, 7204));
+}
+
+test incompatible_conversions_rejected() -> (result: TestResult) {
+    let lm: bool = match convert(1.0, metre(), second()) {
+        ConvOut.Value { value } => false,
+        ConvOut.BadDim => true,
+    };
+    let je: bool = match convert(1.0, joule(), newton()) {
+        ConvOut.Value { value } => false,
+        ConvOut.BadDim => true,
+    };
+    let compat: bool = units_compatible(metre(), foot()) && units_compatible(joule(), electronvolt());
+    let incompat: bool = units_compatible(metre(), second()) == false && units_compatible(joule(), newton()) == false;
+    return from_assertion(equals_bool(true, lm && je && compat && incompat, 7205));
+}
+
+test named_unit_equivalence_is_dimensional() -> (result: TestResult) {
+    // joule and newton-metre share a dimension without sharing a name.
+    let je: bool = dim_eq(unit_dim(joule()), dim_mul(unit_dim(newton()), unit_dim(metre())));
+    let wv: bool = dim_eq(unit_dim(watt()), dim_div(unit_dim(joule()), unit_dim(second())));
+    let pa: bool = dim_eq(unit_dim(pascal()), dim_div(unit_dim(newton()), unit_dim(square_metre())));
+    let hz: bool = dim_eq(unit_dim(hertz()), dim_frequency());
+    let ev: bool = dim_eq(unit_dim(electronvolt()), dim_energy());
+    return from_assertion(equals_bool(true, je && wv && pa && hz && ev, 7206));
+}
+
+test electronvolt_scale_is_exact_charge() -> (result: TestResult) {
+    let ev: bool = match convert(1.0, electronvolt(), joule()) {
+        ConvOut.Value { value } => approx(value, 0.0000000000000000001602176634, 0.0, 0.000000000001),
+        ConvOut.BadDim => false,
+    };
+    let kev: bool = match convert(1000.0, electronvolt(), joule()) {
+        ConvOut.Value { value } => approx(value, 0.0000000000000001602176634, 0.0, 0.000000000001),
+        ConvOut.BadDim => false,
+    };
+    return from_assertion(equals_bool(true, ev && kev, 7207));
+}
+
+test angle_units_are_dimless_with_pinned_factor() -> (result: TestResult) {
+    let half: bool = match convert(180.0, degree(), radian()) {
+        ConvOut.Value { value } => approx(value, 3.141592653589793, 0.000000000001, 0.000000000001),
+        ConvOut.BadDim => false,
+    };
+    let dl: bool = dim_eq(unit_dim(degree()), dimless());
+    let bad: bool = match convert(1.0, degree(), metre()) {
+        ConvOut.Value { value } => false,
+        ConvOut.BadDim => true,
+    };
+    return from_assertion(equals_bool(true, half && dl && bad, 7208));
+}
+
+test celsius_affine_conversions() -> (result: TestResult) {
+    // Absolute scale: offset, not multiplier. Differences stay kelvin.
+    let freezing: bool = celsius_to_kelvin(0.0) == 273.15;
+    let boiling: bool = approx(celsius_to_kelvin(100.0), 373.15, 0.000000000001, 0.000000000001);
+    let triple: bool = approx(celsius_to_kelvin(0.01), 273.16, 0.000000000001, 0.000000000001);
+    let back: bool = approx(kelvin_to_celsius(273.15), 0.0, 0.000000000001, 0.000000000001);
+    let absolute: bool = approx(kelvin_to_celsius(celsius_to_kelvin(20.0)), 20.0, 0.000000000001, 0.000000000001);
+    return from_assertion(equals_bool(true, freezing && boiling && triple && back && absolute, 7209));
+}
+
+test time_and_mass_units() -> (result: TestResult) {
+    let day: bool = match convert(1.0, day(), second()) {
+        ConvOut.Value { value } => value == 86400.0,
+        ConvOut.BadDim => false,
+    };
+    let hr: bool = match convert(90.0, minute(), hour()) {
+        ConvOut.Value { value } => value == 1.5,
+        ConvOut.BadDim => false,
+    };
+    let tonne: bool = match convert(2.0, tonne(), kilogram()) {
+        ConvOut.Value { value } => value == 2000.0,
+        ConvOut.BadDim => false,
+    };
+    let gram: bool = match convert(500.0, gram(), kilogram()) {
+        ConvOut.Value { value } => value == 0.5,
+        ConvOut.BadDim => false,
+    };
+    return from_assertion(equals_bool(true, day && hr && tonne && gram, 7210));
+}

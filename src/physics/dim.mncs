@@ -1,0 +1,187 @@
+mncs 0.18;
+
+// mncs.physics.dim.v1 — SI base-dimension vectors.
+//
+// A dimension is the 7-tuple of integer exponents of the SI base
+// dimensions (length, mass, time, electric current, thermodynamic
+// temperature, amount of substance, luminous intensity) in the
+// power-law monomial
+//
+//   L^l · M^m · T^t · I^i · Θ^th · N^n · J^j.
+//
+// Dimensions are DATA, not types: `Dim` is an ordinary record of
+// seven i64 exponents. Multiplication of quantities adds exponents,
+// division subtracts, integer powers scale them. Compatibility is
+// structural equality (`dim_eq`). This is a deliberate, documented
+// reduction of the compile-time dimension-algebra ideal: current
+// MNCS cannot express exponent arithmetic at the type level
+// (pressure P-PHYSICS-DIM), so enforcement happens at runtime
+// through outcome enums in `mncs.physics.quantity` and above —
+// never silently, never as strings.
+//
+// Only dimensions needed by the implemented foundation are named.
+// Fluid viscosity, FEM stiffness, and atomic energy levels keep
+// their own domain semantics; they can reuse these vectors without
+// Physics knowing their application meaning.
+
+module mncs.physics.dim.v1;
+
+// Seven SI base exponents, in SI Brochure order.
+record Dim { l: i64, m: i64, t: i64, i: i64, th: i64, n: i64, j: i64 }
+
+fn dim(len: i64, mas: i64, tim: i64, cur: i64, tem: i64, amo: i64, lum: i64) -> (result: Dim) {
+    return Dim { l: len, m: mas, t: tim, i: cur, th: tem, n: amo, j: lum };
+}
+
+// The dimensionless dimension: ratios, counts, angles in radians,
+// and any quantity whose exponents all cancel.
+fn dimless() -> (result: Dim) {
+    return Dim { l: 0, m: 0, t: 0, i: 0, th: 0, n: 0, j: 0 };
+}
+
+fn dim_length() -> (result: Dim) {
+    return Dim { l: 1, m: 0, t: 0, i: 0, th: 0, n: 0, j: 0 };
+}
+
+fn dim_mass() -> (result: Dim) {
+    return Dim { l: 0, m: 1, t: 0, i: 0, th: 0, n: 0, j: 0 };
+}
+
+fn dim_time() -> (result: Dim) {
+    return Dim { l: 0, m: 0, t: 1, i: 0, th: 0, n: 0, j: 0 };
+}
+
+fn dim_current() -> (result: Dim) {
+    return Dim { l: 0, m: 0, t: 0, i: 1, th: 0, n: 0, j: 0 };
+}
+
+fn dim_temperature() -> (result: Dim) {
+    return Dim { l: 0, m: 0, t: 0, i: 0, th: 1, n: 0, j: 0 };
+}
+
+fn dim_amount() -> (result: Dim) {
+    return Dim { l: 0, m: 0, t: 0, i: 0, th: 0, n: 1, j: 0 };
+}
+
+fn dim_luminous() -> (result: Dim) {
+    return Dim { l: 0, m: 0, t: 0, i: 0, th: 0, n: 0, j: 1 };
+}
+
+// Structural compatibility: two dimensions agree exactly when all
+// seven exponents agree. Unit names never participate.
+fn dim_eq(a: Dim, b: Dim) -> (result: bool) {
+    return a.l == b.l && a.m == b.m && a.t == b.t && a.i == b.i && a.th == b.th && a.n == b.n && a.j == b.j;
+}
+
+// Dimension of a product of quantities: exponents add.
+fn dim_mul(a: Dim, b: Dim) -> (result: Dim) {
+    return Dim {
+        l: a.l + b.l,
+        m: a.m + b.m,
+        t: a.t + b.t,
+        i: a.i + b.i,
+        th: a.th + b.th,
+        n: a.n + b.n,
+        j: a.j + b.j
+    };
+}
+
+// Dimension of a quotient of quantities: exponents subtract.
+fn dim_div(a: Dim, b: Dim) -> (result: Dim) {
+    return Dim {
+        l: a.l - b.l,
+        m: a.m - b.m,
+        t: a.t - b.t,
+        i: a.i - b.i,
+        th: a.th - b.th,
+        n: a.n - b.n,
+        j: a.j - b.j
+    };
+}
+
+// Dimension of an integer power: exponents scale. Roots are not
+// representable here unless the caller proves divisibility; the
+// quantity layer exposes only squaring through multiplication, so
+// no fractional-exponent back door exists.
+fn dim_pow(d: Dim, k: i64) -> (result: Dim) {
+    return Dim {
+        l: d.l * k,
+        m: d.m * k,
+        t: d.t * k,
+        i: d.i * k,
+        th: d.th * k,
+        n: d.n * k,
+        j: d.j * k
+    };
+}
+
+// --- named derived dimensions (mechanics core) ---
+
+fn dim_area() -> (result: Dim) {
+    return Dim { l: 2, m: 0, t: 0, i: 0, th: 0, n: 0, j: 0 };
+}
+
+fn dim_volume() -> (result: Dim) {
+    return Dim { l: 3, m: 0, t: 0, i: 0, th: 0, n: 0, j: 0 };
+}
+
+fn dim_frequency() -> (result: Dim) {
+    return Dim { l: 0, m: 0, t: -1, i: 0, th: 0, n: 0, j: 0 };
+}
+
+// velocity = length / time.
+fn dim_velocity() -> (result: Dim) {
+    return Dim { l: 1, m: 0, t: -1, i: 0, th: 0, n: 0, j: 0 };
+}
+
+// acceleration = velocity / time.
+fn dim_acceleration() -> (result: Dim) {
+    return Dim { l: 1, m: 0, t: -2, i: 0, th: 0, n: 0, j: 0 };
+}
+
+// momentum = mass * velocity.
+fn dim_momentum() -> (result: Dim) {
+    return Dim { l: 1, m: 1, t: -1, i: 0, th: 0, n: 0, j: 0 };
+}
+
+// force = mass * acceleration.
+fn dim_force() -> (result: Dim) {
+    return Dim { l: 1, m: 1, t: -2, i: 0, th: 0, n: 0, j: 0 };
+}
+
+// energy = force * distance.
+fn dim_energy() -> (result: Dim) {
+    return Dim { l: 2, m: 1, t: -2, i: 0, th: 0, n: 0, j: 0 };
+}
+
+// power = energy / time.
+fn dim_power() -> (result: Dim) {
+    return Dim { l: 2, m: 1, t: -3, i: 0, th: 0, n: 0, j: 0 };
+}
+
+// pressure = force / area (the dimension Fluid consumes).
+fn dim_pressure() -> (result: Dim) {
+    return Dim { l: -1, m: 1, t: -2, i: 0, th: 0, n: 0, j: 0 };
+}
+
+// density = mass / volume.
+fn dim_density() -> (result: Dim) {
+    return Dim { l: -3, m: 1, t: 0, i: 0, th: 0, n: 0, j: 0 };
+}
+
+// stiffness = force / length (the dimension FEM consumes).
+fn dim_stiffness() -> (result: Dim) {
+    return Dim { l: 0, m: 1, t: -2, i: 0, th: 0, n: 0, j: 0 };
+}
+
+// --- electromagnetic dimensions (names only; no EM equations) ---
+
+// charge = current * time.
+fn dim_charge() -> (result: Dim) {
+    return Dim { l: 0, m: 0, t: 1, i: 1, th: 0, n: 0, j: 0 };
+}
+
+// voltage = power / current = energy / charge.
+fn dim_voltage() -> (result: Dim) {
+    return Dim { l: 2, m: 1, t: -3, i: -1, th: 0, n: 0, j: 0 };
+}

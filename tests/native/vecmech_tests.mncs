@@ -1,0 +1,110 @@
+mncs 0.18;
+
+// Native contracts for physical vectors: same-kind Geometry algebra,
+// checked cross-kind conversions (displacement/time, mass scaling),
+// work and kinetic energy readings, and the absence of mixed-kind
+// operations (no function to call is the enforcement).
+
+module mncs.physics.test.vecmech.v1;
+
+use mncs.test.assertions;
+use mncs.test.suite;
+use mncs.geometry.point2;
+use mncs.physics.dim;
+use mncs.physics.unit;
+use mncs.physics.quantity;
+use mncs.physics.vecmech;
+use mncs.numerics.scalar_float;
+
+test displacement_algebra_is_exact() -> (result: TestResult) {
+    let a: Disp2 = disp2(1.0, 2.0);
+    let b: Disp2 = disp2(3.0, 4.0);
+    let s: Disp2 = disp_add(a, b);
+    let d: Disp2 = disp_sub(b, a);
+    let n: Disp2 = disp_neg(a);
+    let c: Disp2 = disp_scale(a, 2.0);
+    let good: bool = s.v.x == 4.0 && s.v.y == 6.0 && d.v.x == 2.0 && d.v.y == 2.0;
+    let good2: bool = n.v.x == 0.0 - 1.0 && n.v.y == 0.0 - 2.0 && c.v.x == 2.0 && c.v.y == 4.0;
+    let v: Vel2 = vel_add(vel2(1.0, 0.0), vel2(0.0, 1.0));
+    let f: Force2 = force_add(force2(1.0, 2.0), force2(3.0, 4.0));
+    let good3: bool = v.v.x == 1.0 && v.v.y == 1.0 && f.v.x == 4.0 && f.v.y == 6.0;
+    return from_assertion(equals_bool(true, good && good2 && good3, 7601));
+}
+
+test unit_scaled_construction_checks_dimension() -> (result: TestResult) {
+    let good: bool = match disp2_in(100.0, 0.0, centimetre()) {
+        VConOut.Disp { d } => d.v.x == 1.0 && d.v.y == 0.0,
+        VConOut.BadDim => false,
+    };
+    let bad: bool = match disp2_in(1.0, 0.0, second()) {
+        VConOut.Disp { d } => false,
+        VConOut.BadDim => true,
+    };
+    return from_assertion(equals_bool(true, good && bad, 7602));
+}
+
+test velocity_from_displacement_over_time() -> (result: TestResult) {
+    let dt: Quantity = quantity_si(2.0, dim_time());
+    let good: bool = match vel_from_disp(disp2(6.0, 8.0), dt) {
+        VRateOut.Vel { v } => v.v.x == 3.0 && v.v.y == 4.0,
+        VRateOut.BadDim => false,
+        VRateOut.DivByZero => false,
+    };
+    let bad: bool = match vel_from_disp(disp2(6.0, 8.0), quantity_si(2.0, dim_mass())) {
+        VRateOut.Vel { v } => false,
+        VRateOut.BadDim => true,
+        VRateOut.DivByZero => false,
+    };
+    let dz: bool = match vel_from_disp(disp2(6.0, 8.0), quantity_si(0.0, dim_time())) {
+        VRateOut.Vel { v } => false,
+        VRateOut.BadDim => false,
+        VRateOut.DivByZero => true,
+    };
+    return from_assertion(equals_bool(true, good && bad && dz, 7603));
+}
+
+test acceleration_from_velocity_change() -> (result: TestResult) {
+    let dt: Quantity = quantity_si(4.0, dim_time());
+    let dv: Vel2 = vel_sub(vel2(5.0, 1.0), vel2(1.0, 0.0 - 3.0));
+    let good: bool = match acc_from_vel(dv, dt) {
+        ARateOut.Acc { a } => a.v.x == 1.0 && a.v.y == 1.0,
+        ARateOut.BadDim => false,
+        ARateOut.DivByZero => false,
+    };
+    return from_assertion(equals_bool(true, good, 7604));
+}
+
+test mass_scaling_gives_force_and_momentum() -> (result: TestResult) {
+    let m: Quantity = quantity_si(2.0, dim_mass());
+    let f: bool = match force_from_mass_acc(m, acc2(3.0, 4.0)) {
+        FMassOut.Force { f } => f.v.x == 6.0 && f.v.y == 8.0,
+        FMassOut.BadDim => false,
+    };
+    let p: bool = match mom_from_mass_vel(m, vel2(3.0, 4.0)) {
+        MMassOut.Mom { p } => p.v.x == 6.0 && p.v.y == 8.0,
+        MMassOut.BadDim => false,
+    };
+    let bad: bool = match force_from_mass_acc(quantity_si(2.0, dim_length()), acc2(3.0, 4.0)) {
+        FMassOut.Force { f } => false,
+        FMassOut.BadDim => true,
+    };
+    return from_assertion(equals_bool(true, f && p && bad, 7605));
+}
+
+test work_and_energy_readings() -> (result: TestResult) {
+    // W = (3,4)·(2,0) = 6 J; K = 2·25/2 = 25 J; |v|² = 25 L²/T².
+    let w: Quantity = work_from_force_disp(force2(3.0, 4.0), disp2(2.0, 0.0));
+    let wg: bool = w.value == 6.0 && q_has_dim(w, dim_energy());
+    let m: Quantity = quantity_si(2.0, dim_mass());
+    let k: bool = match ke_from_mass_vel(m, vel2(3.0, 4.0)) {
+        KVecOut.Value { q } => q.value == 25.0 && q_has_dim(q, dim_energy()),
+        KVecOut.BadDim => false,
+    };
+    let s2: Quantity = speed2_from_vel(vel2(3.0, 4.0));
+    let sg: bool = s2.value == 25.0 && dim_eq(s2.dim, dim_pow(dim_velocity(), 2));
+    let bad: bool = match ke_from_mass_vel(quantity_si(2.0, dim_time()), vel2(3.0, 4.0)) {
+        KVecOut.Value { q } => false,
+        KVecOut.BadDim => true,
+    };
+    return from_assertion(equals_bool(true, wg && k && sg && bad, 7606));
+}

@@ -1,0 +1,207 @@
+mncs 0.18;
+
+// mncs.physics.constant.v1 — pinned physical constants with provenance.
+//
+// Every constant is a `Const`: the quantity (SI value + dimension),
+// the relative standard uncertainty of the quoted value, and whether
+// the value is EXACT (fixed by definition) or MEASURED (a reference
+// value with genuine uncertainty).
+//
+// Sources (frozen references, never live lookups):
+//   SI  — SI Brochure, 9th edition (BIPM, 2019): the seven defining
+//         constants (exact by definition since the 2019 revision).
+//   C22 — CODATA 2022 recommended values (Tiesinga et al.; the
+//         2022 special adjustment): measured constants with stated
+//         uncertainties, pinned here for reproducibility.
+//   CONV— conventional exact values (standard gravity g0).
+//
+// Do not silently imply more precision than the source supports:
+// `rel_unc` is 0.0 for exact constants and the CODATA relative
+// standard uncertainty otherwise. Derived constants (hbar, R,
+// Stefan-Boltzmann) are COMPUTED in code from definers through the
+// quantity layer — the suite pins them against independent values,
+// proving composition instead of copy-paste.
+
+module mncs.physics.constant.v1;
+
+use mncs.physics.dim;
+use mncs.physics.quantity;
+
+// A reference constant: quantity, relative standard uncertainty,
+// and definitional status.
+record Const { q: Quantity, rel_unc: f64, exact: bool }
+
+fn const_value(c: Const) -> (result: Quantity) {
+    return c.q;
+}
+
+fn const_unc(c: Const) -> (result: f64) {
+    return c.rel_unc;
+}
+
+fn const_is_exact(c: Const) -> (result: bool) {
+    return c.exact;
+}
+
+// Nearest binary64 to mathematical pi. Math owns angle/trig
+// semantics; this literal exists only so derived constants (hbar,
+// Stefan-Boltzmann) and the degree unit have one explicit,
+// oracle-pinned site.
+fn pi_value() -> (result: f64) {
+    return 3.141592653589793;
+}
+
+// --- exact SI definers (SI) ---
+
+// Speed of light: 299792458 m/s exact.
+fn const_c() -> (result: Const) {
+    return Const {
+        q: Quantity { value: 299792458.0, dim: dim_velocity() },
+        rel_unc: 0.0,
+        exact: true
+    };
+}
+
+// Planck constant: 6.62607015e-34 J s exact.
+fn const_h() -> (result: Const) {
+    let action: Dim = dim_mul(dim_energy(), dim_time());
+    return Const {
+        q: Quantity { value: 0.000000000000000000000000000000000662607015, dim: action },
+        rel_unc: 0.0,
+        exact: true
+    };
+}
+
+// Reduced Planck constant, COMPUTED as h / (2 pi) through f64
+// division: composition under test, not a second literal.
+fn const_hbar() -> (result: Const) {
+    let h: Quantity = const_value(const_h());
+    return Const {
+        q: Quantity { value: h.value / (2.0 * pi_value()), dim: h.dim },
+        rel_unc: 0.0,
+        exact: true
+    };
+}
+
+// Boltzmann constant: 1.380649e-23 J/K exact.
+fn const_kb() -> (result: Const) {
+    let per_kelvin: Dim = dim_div(dim_energy(), dim_temperature());
+    return Const {
+        q: Quantity { value: 0.00000000000000000000001380649, dim: per_kelvin },
+        rel_unc: 0.0,
+        exact: true
+    };
+}
+
+// Elementary charge: 1.602176634e-19 C exact.
+fn const_e() -> (result: Const) {
+    return Const {
+        q: Quantity { value: 0.0000000000000000001602176634, dim: dim_charge() },
+        rel_unc: 0.0,
+        exact: true
+    };
+}
+
+// Avogadro constant: 6.02214076e23 mol^-1 exact.
+fn const_na() -> (result: Const) {
+    let per_mol: Dim = dim_div(dimless(), dim_amount());
+    return Const {
+        q: Quantity { value: 602214076000000000000000.0, dim: per_mol },
+        rel_unc: 0.0,
+        exact: true
+    };
+}
+
+// Caesium hyperfine frequency: 9192631770 Hz exact.
+fn const_dcs() -> (result: Const) {
+    return Const {
+        q: Quantity { value: 9192631770.0, dim: dim_frequency() },
+        rel_unc: 0.0,
+        exact: true
+    };
+}
+
+// Molar gas constant, COMPUTED as NA * kB (exact, since both
+// definers are exact): R = 8.31446261815324 J/(mol K).
+fn const_r_gas() -> (result: Const) {
+    let na: Quantity = const_value(const_na());
+    let kb: Quantity = const_value(const_kb());
+    let prod: Quantity = q_mul(na, kb);
+    return Const { q: prod, rel_unc: 0.0, exact: true };
+}
+
+// Stefan-Boltzmann constant, COMPUTED as
+// 2 pi^5 kB^4 / (15 c^2 h^3): pinned against 5.670374419e-8.
+fn const_sigma_sb() -> (result: Const) {
+    let kb: Quantity = const_value(const_kb());
+    let c: Quantity = const_value(const_c());
+    let h: Quantity = const_value(const_h());
+    let pi: f64 = pi_value();
+    let num: f64 = 2.0 * pi * pi * pi * pi * pi * kb.value * kb.value * kb.value * kb.value;
+    let den: f64 = 15.0 * c.value * c.value * h.value * h.value * h.value;
+    let e_dim: Dim = dim_energy();
+    let num_dim: Dim = dim_mul(dim_pow(e_dim, 4), dim_pow(dim_temperature(), -4));
+    return Const { q: Quantity { value: num / den, dim: num_dim }, rel_unc: 0.0, exact: true };
+}
+
+// --- measured constants (C22) ---
+
+// Newtonian constant of gravitation: 6.67430(15)e-11 m^3 kg^-1 s^-2.
+fn const_g_newton() -> (result: Const) {
+    let g_dim: Dim = dim_div(dim_volume(), dim_mul(dim_mass(), dim_pow(dim_time(), 2)));
+    return Const {
+        q: Quantity { value: 0.0000000000667430, dim: g_dim },
+        rel_unc: 0.000022,
+        exact: false
+    };
+}
+
+// Electron mass: 9.1093837131(28)e-31 kg.
+fn const_m_electron() -> (result: Const) {
+    return Const {
+        q: Quantity { value: 0.00000000000000000000000000000091093837131, dim: dim_mass() },
+        rel_unc: 0.00000000031,
+        exact: false
+    };
+}
+
+// Proton mass: 1.67262192595(52)e-27 kg.
+fn const_m_proton() -> (result: Const) {
+    return Const {
+        q: Quantity { value: 0.00000000000000000000000000167262192595, dim: dim_mass() },
+        rel_unc: 0.00000000031,
+        exact: false
+    };
+}
+
+// Atomic mass constant: 1.66053906892(52)e-27 kg.
+fn const_u() -> (result: Const) {
+    return Const {
+        q: Quantity { value: 0.00000000000000000000000000166053906892, dim: dim_mass() },
+        rel_unc: 0.00000000031,
+        exact: false
+    };
+}
+
+// Vacuum permittivity: 8.8541878188(14)e-12 F/m (measured since the
+// 2019 SI revision fixed e, h, c instead of mu0).
+fn const_eps0() -> (result: Const) {
+    let q2: Dim = dim_pow(dim_charge(), 2);
+    let el: Dim = dim_mul(dim_energy(), dim_length());
+    return Const {
+        q: Quantity { value: 0.0000000000088541878188, dim: dim_div(q2, el) },
+        rel_unc: 0.00000000016,
+        exact: false
+    };
+}
+
+// --- conventional (CONV) ---
+
+// Standard gravity: 9.80665 m/s^2 exact by convention (CGPM).
+fn const_g0() -> (result: Const) {
+    return Const {
+        q: Quantity { value: 9.80665, dim: dim_acceleration() },
+        rel_unc: 0.0,
+        exact: true
+    };
+}

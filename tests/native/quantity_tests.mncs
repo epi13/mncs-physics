@@ -1,0 +1,144 @@
+mncs 0.18;
+
+// Native contracts for quantities: SI boundary construction,
+// dimensionally checked add/subtract, composing multiply/divide,
+// integer powers, unit expression, scalar extraction, and the
+// static separation of Quantity from bare f64 (unspellable mixing).
+
+module mncs.physics.test.quantity.v1;
+
+use mncs.test.assertions;
+use mncs.test.suite;
+use mncs.physics.dim;
+use mncs.physics.unit;
+use mncs.physics.quantity;
+use mncs.numerics.scalar_float;
+
+test boundary_construction_stores_si() -> (result: TestResult) {
+    let km: Quantity = quantity_in(1.0, kilometre());
+    let hr: Quantity = quantity_in(2.0, hour());
+    let good: bool = km.value == 1000.0 && q_has_dim(km, dim_length());
+    let good2: bool = hr.value == 7200.0 && q_has_dim(hr, dim_time());
+    let si: Quantity = quantity_si(9.5, dim_mass());
+    let good3: bool = si.value == 9.5 && q_has_dim(si, dim_mass());
+    return from_assertion(equals_bool(true, good && good2 && good3, 7301));
+}
+
+test compatible_addition_subtraction() -> (result: TestResult) {
+    let a: Quantity = quantity_in(1.0, kilometre());
+    let b: Quantity = quantity_in(500.0, metre());
+    let sum: bool = match q_add(a, b) {
+        QAddOut.Value { q } => q.value == 1500.0 && q_has_dim(q, dim_length()),
+        QAddOut.BadDim => false,
+    };
+    let dif: bool = match q_sub(a, b) {
+        QAddOut.Value { q } => q.value == 500.0 && q_has_dim(q, dim_length()),
+        QAddOut.BadDim => false,
+    };
+    return from_assertion(equals_bool(true, sum && dif, 7302));
+}
+
+test incompatible_addition_is_data_not_trap() -> (result: TestResult) {
+    let len: Quantity = quantity_in(1.0, metre());
+    let dur: Quantity = quantity_in(1.0, second());
+    let add: bool = match q_add(len, dur) {
+        QAddOut.Value { q } => false,
+        QAddOut.BadDim => true,
+    };
+    let sub: bool = match q_sub(len, dur) {
+        QAddOut.Value { q } => false,
+        QAddOut.BadDim => true,
+    };
+    let energy: Quantity = quantity_in(1.0, joule());
+    let force: Quantity = quantity_in(1.0, newton());
+    let ef: bool = match q_add(energy, force) {
+        QAddOut.Value { q } => false,
+        QAddOut.BadDim => true,
+    };
+    return from_assertion(equals_bool(true, add && sub && ef, 7303));
+}
+
+test multiplication_composes_dimensions() -> (result: TestResult) {
+    // length / time -> velocity; mass * acceleration -> force;
+    // force * distance -> energy. All dimensionally total.
+    let len: Quantity = quantity_si(10.0, dim_length());
+    let dur: Quantity = quantity_si(2.0, dim_time());
+    let vel: bool = match q_div(len, dur) {
+        QDivOut.Value { q } => q.value == 5.0 && q_has_dim(q, dim_velocity()),
+        QDivOut.DivByZero => false,
+    };
+    let mass: Quantity = quantity_si(2.0, dim_mass());
+    let acc: Quantity = quantity_si(3.0, dim_acceleration());
+    let force: Quantity = q_mul(mass, acc);
+    let fgood: bool = force.value == 6.0 && q_has_dim(force, dim_force());
+    let dist: Quantity = quantity_si(4.0, dim_length());
+    let energy: Quantity = q_mul(force, dist);
+    let egood: bool = energy.value == 24.0 && q_has_dim(energy, dim_energy());
+    return from_assertion(equals_bool(true, vel && fgood && egood, 7304));
+}
+
+test division_refuses_zero_divisor() -> (result: TestResult) {
+    let num: Quantity = quantity_si(10.0, dim_length());
+    let zero: Quantity = quantity_si(0.0, dim_time());
+    let bad: bool = match q_div(num, zero) {
+        QDivOut.Value { q } => false,
+        QDivOut.DivByZero => true,
+    };
+    return from_assertion(equals_bool(true, bad, 7305));
+}
+
+test fixed_powers_and_reciprocal() -> (result: TestResult) {
+    let v: Quantity = quantity_si(3.0, dim_velocity());
+    let v2: Quantity = q_pow2(v);
+    let sq: bool = v2.value == 9.0 && dim_eq(v2.dim, dim_pow(dim_velocity(), 2));
+    let vol: Quantity = q_pow3(quantity_si(2.0, dim_length()));
+    let cube: bool = vol.value == 8.0 && q_has_dim(vol, dim_volume());
+    let inv: bool = match q_inv(quantity_si(2.0, dim_length())) {
+        QInvOut.Value { q } => q.value == 0.5 && dim_eq(q.dim, dim_pow(dim_length(), -1)),
+        QInvOut.DivByZero => false,
+    };
+    let inv0: bool = match q_inv(quantity_si(0.0, dim_length())) {
+        QInvOut.Value { q } => false,
+        QInvOut.DivByZero => true,
+    };
+    return from_assertion(equals_bool(true, sq && cube && inv && inv0, 7306));
+}
+
+test expression_in_units() -> (result: TestResult) {
+    let q: Quantity = quantity_in(1500.0, metre());
+    let km: bool = match q_value_in(q, kilometre()) {
+        QValOut.Value { value } => value == 1.5,
+        QValOut.BadDim => false,
+    };
+    let bad: bool = match q_value_in(q, second()) {
+        QValOut.Value { value } => false,
+        QValOut.BadDim => true,
+    };
+    return from_assertion(equals_bool(true, km && bad, 7307));
+}
+
+test scalar_extraction_checks_dimension() -> (result: TestResult) {
+    let e: Quantity = quantity_in(12.0, joule());
+    let good: bool = match q_to_scalar(e, dim_energy()) {
+        QScalarOut.Value { value } => value == 12.0,
+        QScalarOut.BadDim => false,
+    };
+    let bad: bool = match q_to_scalar(e, dim_force()) {
+        QScalarOut.Value { value } => false,
+        QScalarOut.BadDim => true,
+    };
+    let dl: bool = q_is_dimless(quantity_si(2.0, dimless())) && q_is_dimless(e) == false;
+    return from_assertion(equals_bool(true, good && bad && dl, 7308));
+}
+
+test quantity_approx_needs_shared_dimension() -> (result: TestResult) {
+    let a: Quantity = quantity_si(1.0, dim_length());
+    let b: Quantity = quantity_si(1.0, dim_length());
+    let c: Quantity = quantity_si(1.0, dim_time());
+    let same: bool = q_approx(a, b, 0.0, 0.0);
+    let other: bool = q_approx(a, c, 0.0, 0.0) == false;
+    let neg: Quantity = q_neg(a);
+    let scaled: Quantity = q_scale(a, 2.0);
+    let ops: bool = neg.value == 0.0 - 1.0 && scaled.value == 2.0 && q_has_dim(neg, dim_length());
+    return from_assertion(equals_bool(true, same && other && ops, 7309));
+}

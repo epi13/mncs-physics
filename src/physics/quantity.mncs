@@ -1,0 +1,157 @@
+mncs 0.18;
+
+// mncs.physics.quantity.v1 — physical quantities: value + dimension.
+//
+// `5` is not the same semantic thing as `5 metres`. A `Quantity`
+// carries its SI value (`value`, always in SI base units) together
+// with its dimension vector (`dim`). Construction from a
+// value-in-unit scales once, at the boundary; every later operation
+// works in SI and tracks dimensions structurally.
+//
+// Enforcement model (honest):
+//   - static: `Quantity` is nominally distinct from `f64`, so bare
+//     scalars and quantities never mix implicitly; distinct vector
+//     wrappers in `vecmech` keep force apart from displacement.
+//   - runtime: dimensional compatibility (add/subtract, conversion,
+//     extraction) returns outcome enums (`QAddOut`, `QValOut`,
+//     `QScalarOut`); incompatible combinations are DATA, never a
+//     trap and never a silent rescale.
+//   - impossible today: type-level dimensions such as
+//     `Quantity<Length, f64>` (pressure P-PHYSICS-DIM).
+//
+// Multiplication, division, and integer powers always succeed
+// dimensionally (they compose exponents); division additionally
+// refuses a zero divisor value via `safe_div` discipline.
+
+module mncs.physics.quantity.v1;
+
+use mncs.physics.dim;
+use mncs.physics.unit;
+use mncs.numerics.scalar_float;
+
+// A physical quantity: SI value plus its dimension vector.
+record Quantity { value: f64, dim: Dim }
+
+fn quantity_si(value: f64, dim: Dim) -> (result: Quantity) {
+    return Quantity { value: value, dim: dim };
+}
+
+// Boundary constructor: value expressed in `u`, stored in SI.
+fn quantity_in(value: f64, u: Unit) -> (result: Quantity) {
+    return Quantity { value: value * u.scale, dim: u.dim };
+}
+
+fn q_value(q: Quantity) -> (result: f64) {
+    return q.value;
+}
+
+fn q_dim(q: Quantity) -> (result: Dim) {
+    return q.dim;
+}
+
+fn q_has_dim(q: Quantity, d: Dim) -> (result: bool) {
+    return dim_eq(q.dim, d);
+}
+
+fn q_is_dimless(q: Quantity) -> (result: bool) {
+    return dim_eq(q.dim, dimless());
+}
+
+// Outcome of expressing a quantity in a unit.
+enum QValOut { Value { value: f64 }, BadDim }
+
+fn q_value_in(q: Quantity, u: Unit) -> (result: QValOut) {
+    if dim_eq(q.dim, u.dim) == false {
+        return QValOut.BadDim;
+    }
+    return QValOut.Value { value: q.value / u.scale };
+}
+
+// Outcome of dimensionally checked addition/subtraction.
+enum QAddOut { Value { q: Quantity }, BadDim }
+
+fn q_add(a: Quantity, b: Quantity) -> (result: QAddOut) {
+    if dim_eq(a.dim, b.dim) == false {
+        return QAddOut.BadDim;
+    }
+    return QAddOut.Value { q: Quantity { value: a.value + b.value, dim: a.dim } };
+}
+
+fn q_sub(a: Quantity, b: Quantity) -> (result: QAddOut) {
+    if dim_eq(a.dim, b.dim) == false {
+        return QAddOut.BadDim;
+    }
+    return QAddOut.Value { q: Quantity { value: a.value - b.value, dim: a.dim } };
+}
+
+// Product/quotient compose dimensions and always succeed
+// dimensionally. `q_div` still refuses a zero divisor value.
+fn q_mul(a: Quantity, b: Quantity) -> (result: Quantity) {
+    return Quantity { value: a.value * b.value, dim: dim_mul(a.dim, b.dim) };
+}
+
+enum QDivOut { Value { q: Quantity }, DivByZero }
+
+fn q_div(a: Quantity, b: Quantity) -> (result: QDivOut) {
+    return match safe_div(a.value, b.value) {
+        FDiv.Value { value } => QDivOut.Value { q: Quantity { value: value, dim: dim_div(a.dim, b.dim) } },
+        FDiv.DivByZero => QDivOut.DivByZero,
+    };
+}
+
+// Fixed small powers by explicit composition. A general q_pow over
+// an i64 exponent is deliberately ABSENT: the language rejects the
+// recursion it would need (MNE130) and bounded iteration requires a
+// literal bound, so an exponent-driven loop is inexpressible today
+// (pressure P-PHYSICS-POW). The named cases below are exactly the
+// powers the foundation needs; everything else composes at the call
+// site through q_mul.
+fn q_pow2(q: Quantity) -> (result: Quantity) {
+    return q_mul(q, q);
+}
+
+fn q_pow3(q: Quantity) -> (result: Quantity) {
+    return q_mul(q, q_pow2(q));
+}
+
+// Reciprocal with a checked zero divisor: 1/q composes the negated
+// dimension through dim_pow.
+enum QInvOut { Value { q: Quantity }, DivByZero }
+
+fn q_inv(q: Quantity) -> (result: QInvOut) {
+    return match safe_div(1.0, q.value) {
+        FDiv.Value { value } => QInvOut.Value {
+            q: Quantity { value: value, dim: dim_pow(q.dim, -1) }
+        },
+        FDiv.DivByZero => QInvOut.DivByZero,
+    };
+}
+
+fn q_neg(q: Quantity) -> (result: Quantity) {
+    return Quantity { value: 0.0 - q.value, dim: q.dim };
+}
+
+fn q_scale(q: Quantity, s: f64) -> (result: Quantity) {
+    return Quantity { value: q.value * s, dim: q.dim };
+}
+
+// Outcome of extracting a bare scalar from a quantity: allowed only
+// for the expected dimension, so `q_to_scalar(force, dim_energy)`
+// is `BadDim` instead of a misread number.
+enum QScalarOut { Value { value: f64 }, BadDim }
+
+fn q_to_scalar(q: Quantity, d: Dim) -> (result: QScalarOut) {
+    if dim_eq(q.dim, d) == false {
+        return QScalarOut.BadDim;
+    }
+    return QScalarOut.Value { value: q.value };
+}
+
+// Approximate equality of two quantities: same dimension required,
+// then the numerics `approx` discipline on SI values.
+fn q_approx(a: Quantity, b: Quantity, abs_tol: f64, rel_tol: f64) -> (result: bool) {
+    if dim_eq(a.dim, b.dim) == false {
+        return false;
+    }
+    return approx(a.value, b.value, abs_tol, rel_tol);
+}

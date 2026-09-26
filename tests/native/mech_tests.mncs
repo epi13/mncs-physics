@@ -1,0 +1,166 @@
+mncs 0.18;
+
+// Native contracts for scalar mechanics: F = ma, p = mv, K = mv²/2,
+// W = Fd, P = E/t, weight, constant-acceleration kinematics, and the
+// checked energy-to-speed root. Textbook values with exact dyadic
+// expectations and explicit invalid-input arms.
+
+module mncs.physics.test.mech.v1;
+
+use mncs.test.assertions;
+use mncs.test.suite;
+use mncs.physics.dim;
+use mncs.physics.quantity;
+use mncs.physics.mech;
+use mncs.numerics.scalar_float;
+
+test force_momentum_energy_textbook() -> (result: TestResult) {
+    // m = 2 kg, a = 3 m/s², v = 3 m/s: F = 6 N, p = 6, K = 9 J.
+    let m: Quantity = quantity_si(2.0, dim_mass());
+    let a: Quantity = quantity_si(3.0, dim_acceleration());
+    let v: Quantity = quantity_si(3.0, dim_velocity());
+    let f: bool = match force_of(m, a) {
+        MechOut.Value { q } => q.value == 6.0 && q_has_dim(q, dim_force()),
+        MechOut.BadDim => false,
+    };
+    let p: bool = match momentum_of(m, v) {
+        MechOut.Value { q } => q.value == 6.0 && q_has_dim(q, dim_momentum()),
+        MechOut.BadDim => false,
+    };
+    let k: bool = match ke_of(m, v) {
+        MechOut.Value { q } => q.value == 9.0 && q_has_dim(q, dim_energy()),
+        MechOut.BadDim => false,
+    };
+    return from_assertion(equals_bool(true, f && p && k, 7501));
+}
+
+test work_power_and_inverses() -> (result: TestResult) {
+    let f: Quantity = quantity_si(6.0, dim_force());
+    let d: Quantity = quantity_si(2.0, dim_length());
+    let w: bool = match work_of(f, d) {
+        MechOut.Value { q } => q.value == 12.0 && q_has_dim(q, dim_energy()),
+        MechOut.BadDim => false,
+    };
+    let e: Quantity = quantity_si(100.0, dim_energy());
+    let t: Quantity = quantity_si(4.0, dim_time());
+    let p: bool = match power_of(e, t) {
+        MechDivOut.Value { q } => q.value == 25.0 && q_has_dim(q, dim_power()),
+        MechDivOut.BadDim => false,
+        MechDivOut.DivByZero => false,
+    };
+    let m: Quantity = quantity_si(2.0, dim_mass());
+    let ai: bool = match accel_of(f, m) {
+        MechDivOut.Value { q } => q.value == 3.0 && q_has_dim(q, dim_acceleration()),
+        MechDivOut.BadDim => false,
+        MechDivOut.DivByZero => false,
+    };
+    let mom: Quantity = quantity_si(6.0, dim_momentum());
+    let vi: bool = match vel_of(mom, m) {
+        MechDivOut.Value { q } => q.value == 3.0 && q_has_dim(q, dim_velocity()),
+        MechDivOut.BadDim => false,
+        MechDivOut.DivByZero => false,
+    };
+    return from_assertion(equals_bool(true, w && p && ai && vi, 7502));
+}
+
+test division_and_dimension_failures() -> (result: TestResult) {
+    let e: Quantity = quantity_si(100.0, dim_energy());
+    let zt: Quantity = quantity_si(0.0, dim_time());
+    let dz: bool = match power_of(e, zt) {
+        MechDivOut.Value { q } => false,
+        MechDivOut.BadDim => false,
+        MechDivOut.DivByZero => true,
+    };
+    let len: Quantity = quantity_si(1.0, dim_length());
+    let bd: bool = match force_of(len, len) {
+        MechOut.Value { q } => false,
+        MechOut.BadDim => true,
+    };
+    let bd2: bool = match work_of(len, len) {
+        MechOut.Value { q } => false,
+        MechOut.BadDim => true,
+    };
+    let bd3: bool = match power_of(len, len) {
+        MechDivOut.Value { q } => false,
+        MechDivOut.BadDim => true,
+        MechDivOut.DivByZero => false,
+    };
+    return from_assertion(equals_bool(true, dz && bd && bd2 && bd3, 7503));
+}
+
+test weight_uses_standard_gravity() -> (result: TestResult) {
+    let m: Quantity = quantity_si(1.0, dim_mass());
+    let w: bool = match weight_of(m) {
+        MechOut.Value { q } => q.value == 9.80665 && q_has_dim(q, dim_force()),
+        MechOut.BadDim => false,
+    };
+    let bad: bool = match weight_of(quantity_si(1.0, dim_length())) {
+        MechOut.Value { q } => false,
+        MechOut.BadDim => true,
+    };
+    return from_assertion(equals_bool(true, w && bad, 7504));
+}
+
+test constant_acceleration_kinematics() -> (result: TestResult) {
+    // v0 = 1, a = 2, t = 3: v = 7; x0 = 0: x = 12.
+    let v0: Quantity = quantity_si(1.0, dim_velocity());
+    let a: Quantity = quantity_si(2.0, dim_acceleration());
+    let t: Quantity = quantity_si(3.0, dim_time());
+    let vv: bool = match kin_v(v0, a, t) {
+        MechOut.Value { q } => q.value == 7.0 && q_has_dim(q, dim_velocity()),
+        MechOut.BadDim => false,
+    };
+    let x0: Quantity = quantity_si(0.0, dim_length());
+    let xx: bool = match kin_x(x0, v0, a, t) {
+        MechOut.Value { q } => q.value == 12.0 && q_has_dim(q, dim_length()),
+        MechOut.BadDim => false,
+    };
+    let bad: bool = match kin_x(x0, v0, a, v0) {
+        MechOut.Value { q } => false,
+        MechOut.BadDim => true,
+    };
+    return from_assertion(equals_bool(true, vv && xx && bad, 7505));
+}
+
+test speed_from_energy_root() -> (result: TestResult) {
+    // K = 18 J, m = 2 kg: v = sqrt(18) ≈ 4.242640687119285.
+    let ke: Quantity = quantity_si(18.0, dim_energy());
+    let m: Quantity = quantity_si(2.0, dim_mass());
+    let tol: f64 = 0.000000001;
+    let s: bool = match speed_from_ke(ke, m) {
+        MechRootOut.Value { q } => approx(q.value, 4.242640687119285, tol, tol) && q_has_dim(q, dim_velocity()),
+        MechRootOut.BadDim => false,
+        MechRootOut.BadValue => false,
+        MechRootOut.DivByZero => false,
+    };
+    let rest: bool = match speed_from_ke(quantity_si(0.0, dim_energy()), m) {
+        MechRootOut.Value { q } => q.value == 0.0,
+        MechRootOut.BadDim => false,
+        MechRootOut.BadValue => false,
+        MechRootOut.DivByZero => false,
+    };
+    return from_assertion(equals_bool(true, s && rest, 7506));
+}
+
+test root_rejects_bad_inputs() -> (result: TestResult) {
+    let m: Quantity = quantity_si(2.0, dim_mass());
+    let neg: bool = match speed_from_ke(quantity_si(0.0 - 1.0, dim_energy()), m) {
+        MechRootOut.Value { q } => false,
+        MechRootOut.BadDim => false,
+        MechRootOut.BadValue => true,
+        MechRootOut.DivByZero => false,
+    };
+    let zm: bool = match speed_from_ke(quantity_si(1.0, dim_energy()), quantity_si(0.0, dim_mass())) {
+        MechRootOut.Value { q } => false,
+        MechRootOut.BadDim => false,
+        MechRootOut.BadValue => false,
+        MechRootOut.DivByZero => true,
+    };
+    let bd: bool = match speed_from_ke(quantity_si(1.0, dim_force()), m) {
+        MechRootOut.Value { q } => false,
+        MechRootOut.BadDim => true,
+        MechRootOut.BadValue => false,
+        MechRootOut.DivByZero => false,
+    };
+    return from_assertion(equals_bool(true, neg && zm && bd, 7507));
+}
