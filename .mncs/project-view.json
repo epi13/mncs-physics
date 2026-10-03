@@ -1,0 +1,22 @@
+{
+  "capabilities": [
+    {
+      "contract": "physics-core",
+      "fingerprint_sources": [
+        "src/physics/"
+      ],
+      "kind": "mncs-library",
+      "stability": "experimental",
+      "version": "0.1"
+    }
+  ],
+  "dependencies": [],
+  "entry": [
+    "python3 scripts/run_tests.py"
+  ],
+  "purpose": "Scientifically accurate machine-native physics substrate for MNCS: quantities, mechanics, integration, and conservation with explicit numerical contracts, where correctness outranks convenience.",
+  "repository": "mncs-physics",
+  "schema_version": "mncs.project-view/1",
+  "source_identity": "sha256:353b19088eaf699b7db18a2bca8b6dfc0933f8bafd7a5e9ba995ca19a339b8db",
+  "structure": {}
+}

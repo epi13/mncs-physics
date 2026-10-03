@@ -1,6 +1,19 @@
 # mncs-physics
 
 <!-- MNCS:generated:begin -->
+## Project entry
+
+Scientifically accurate machine-native physics substrate for MNCS: quantities, mechanics, integration, and conservation with explicit numerical contracts, where correctness outranks convenience.
+
+```bash
+python3 scripts/run_tests.py
+```
+
+Declared capabilities (declarations do not establish execution health):
+
+- `physics-core/0.1` — mncs-library (experimental)
+
+Semantic sources and ownership: `.mncs/projections.json`.
 <!-- MNCS:generated:end -->
 
 Scientifically accurate machine-native physics for MNCS.
