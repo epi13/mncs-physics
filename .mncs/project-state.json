@@ -1,0 +1,17 @@
+{
+  "schema_version": "mncs.project-intent/1",
+  "purpose": "Scientifically accurate machine-native physics substrate for MNCS: quantities, mechanics, integration, and conservation with explicit numerical contracts, where correctness outranks convenience.",
+  "entry": [
+    "python3 scripts/run_tests.py"
+  ],
+  "milestones": [
+    {
+      "id": "mncs-physics:projection-conformance",
+      "title": "Declared ambient projection surfaces satisfy their contract",
+      "subject_slot": "declarations",
+      "evidence": "projection-conformance",
+      "dependencies": [],
+      "blockers": []
+    }
+  ]
+}

@@ -1,5 +1,8 @@
 # mncs-physics
 
+<!-- MNCS:generated:begin -->
+<!-- MNCS:generated:end -->
+
 Scientifically accurate machine-native physics for MNCS.
 
 `mncs-physics` is a reusable scientific physics substrate for systems such as `mncs-engine`, robotics, simulation, digital twins, and scientific workloads. It is also a deliberate low-level correctness and numerical-precision pressure project for `mncs-language`.
